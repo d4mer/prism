@@ -1,4 +1,4 @@
-# understory 🌱
+# Prism 🌱
 
 **Memory that grows.**
 
@@ -21,7 +21,7 @@ No clone needed — the image is public. Save this as `docker-compose.yml`:
 
 ```yaml
 services:
-  understory:
+  prism:
     image: ghcr.io/thecodacus/understory:latest
     ports:
       - "3800:3800"
@@ -32,7 +32,7 @@ services:
     volumes:
       # Your memory lives here as plain markdown — a named volume, or point
       # a bind mount (e.g. ./my-memory:/bundle) at any OKF bundle.
-      - understory-memory:/bundle
+      - prism-memory:/bundle
     environment:
       BUNDLE_ROOT: /bundle
       LLM_API_BASE_URL: ${LLM_API_BASE_URL}
@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  understory-memory:
+  prism-memory:
 ```
 
 ```bash
@@ -84,7 +84,7 @@ LLM_API_BASE_URL=https://api.groq.com/openai/v1 LLM_API_KEY=gsk_... LLM_MODEL=ll
 LLM_API_BASE_URL=http://host.docker.internal:8080/v1 LLM_MODEL=
 ```
 
-> When understory runs in Docker, `localhost` is the container itself, not the
+> When prism runs in Docker, `localhost` is the container itself, not the
 > host — so a llama-server on the host is reached at `host.docker.internal`
 > (the compose files above already map it via `extra_hosts`). Running from
 > source on the same box as llama-server, use `http://localhost:8080/v1`.
@@ -102,7 +102,7 @@ Then:
 - **Web UI** → http://localhost:3800 — browse the memory, watch the graph, chat with the agent
 - **MCP endpoint** → `http://localhost:3800/mcp` (streamable HTTP) — register it in any MCP client:
   ```bash
-  claude mcp add --transport http ustory http://localhost:3800/mcp
+  claude mcp add --transport http prism http://localhost:3800/mcp
   ```
 - Your agent now has `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain`, and gets a seed overview of the memory at every session start.
 
@@ -154,20 +154,20 @@ Or build the container yourself: `docker compose up --build` (the repo's [docker
 Dev mode (server on :3800, Vite HMR on :5180 with proxy):
 
 ```bash
-BUNDLE_ROOT=./sample-bundle pnpm --filter @understory/server dev
-pnpm --filter @understory/web dev
+BUNDLE_ROOT=./sample-bundle pnpm --filter @prism/server dev
+pnpm --filter @prism/web dev
 ```
 
 ## MCP registration (Claude Code / Desktop)
 
 ```bash
-claude mcp add ustory \
+claude mcp add prism \
   -e BUNDLE_ROOT=/path/to/your/bundle \
   -e LLM_API_BASE_URL=https://api.deepseek.com/v1 \
   -e LLM_API_KEY=sk-... \
   -e LLM_API_FORMAT=openai \
   -e LLM_MODEL=deepseek-chat \
-  -- node /path/to/understory/packages/server/dist/mcp/stdio.js
+  -- node /path/to/prism/packages/server/dist/mcp/stdio.js
 ```
 
 Or point an HTTP MCP client at `http://host:3800/mcp`.
@@ -183,7 +183,7 @@ AUTH_TOKEN=$(openssl rand -hex 24)
 With it set, `/mcp` and `/api` require `Authorization: Bearer <token>` (the web UI stays reachable and prompts for the token). Register authenticated MCP clients with a header:
 
 ```bash
-claude mcp add --transport http ustory http://host:3800/mcp \
+claude mcp add --transport http prism http://host:3800/mcp \
   --header "Authorization: Bearer <token>"
 ```
 

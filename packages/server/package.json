@@ -1,10 +1,10 @@
 {
-  "name": "@understory/server",
+  "name": "@prism/server",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
-    "ustory": "./bin/ustory"
+    "prism": "./bin/prism"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "@understory/core": "workspace:*",
+    "@prism/core": "workspace:*",
     "ai": "^5.0.0",
     "cors": "^2.8.5",
     "express": "^5.0.0",

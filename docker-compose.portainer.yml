@@ -2,7 +2,10 @@
 # Point Portainer at this file (Stacks → Add stack → Repository) and set
 # the LLM env vars in the stack's environment variables UI.
 services:
-  understory:
+  prism:
+    # TODO: point at ghcr.io/d4mer/prism:latest once Prism publishes its own image.
+    # For now this pulls the upstream understory project's image, which has
+    # diverged from this fork (no tool registry, no LLM-optional startup, etc).
     image: ghcr.io/thecodacus/understory:latest
     ports:
       - "3800:3800"

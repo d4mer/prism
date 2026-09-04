@@ -5,7 +5,7 @@
  *     -e LLM_PROVIDER=openrouter -- node <repo>/packages/server/dist/mcp/stdio.js
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { KnowledgeBase, resolveFallbackConfig, resolveModelConfig } from "@understory/core";
+import { KnowledgeBase, resolveFallbackConfig, resolveModelConfig } from "@prism/core";
 import { buildMcpServer } from "./server.js";
 
 const bundleRoot = process.env.BUNDLE_ROOT;
@@ -20,12 +20,12 @@ if (!bundleRoot) {
 try {
   const primaryConfig = resolveModelConfig();
   console.error(
-    `[understory] model: ${primaryConfig.format}:${primaryConfig.model || "auto"} @ ${primaryConfig.baseURL}`
+    `[prism] model: ${primaryConfig.format}:${primaryConfig.model || "auto"} @ ${primaryConfig.baseURL}`
   );
   const fallbackConfig = resolveFallbackConfig();
   if (fallbackConfig) {
     console.error(
-      `[understory] fallback: ${fallbackConfig.format}:${fallbackConfig.model || "auto"} @ ${fallbackConfig.baseURL}`
+      `[prism] fallback: ${fallbackConfig.format}:${fallbackConfig.model || "auto"} @ ${fallbackConfig.baseURL}`
     );
   }
 } catch (err) {
@@ -40,4 +40,4 @@ const kb = new KnowledgeBase(bundleRoot, {
 const server = await buildMcpServer(kb);
 await server.connect(new StdioServerTransport());
 // stdio transport keeps the process alive; logs must go to stderr only.
-console.error(`[understory] serving bundle ${bundleRoot} over stdio`);
+console.error(`[prism] serving bundle ${bundleRoot} over stdio`);

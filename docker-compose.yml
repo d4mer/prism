@@ -1,5 +1,5 @@
 services:
-  understory:
+  prism:
     build: .
     ports:
       - "3800:3800"
