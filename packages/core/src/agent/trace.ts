@@ -80,20 +80,22 @@ export function buildNotation(
 ): string {
   const parts = steps.map((s) => {
     switch (s.tool) {
-      case "search_knowledge":
+      case "concept_search":
         return `search "${truncate(s.summary, 30)}" (${s.paths.length})`;
-      case "read_concept":
+      case "concept_read":
         return `read ${shortPath(s.paths[0] ?? s.summary)}`;
-      case "list_directory":
+      case "concept_list":
         return "browse layout";
-      case "lint_knowledge":
+      case "graph_lint":
         return "lint graph";
-      case "write_concept":
+      case "concept_write":
         return `write ${shortPath(s.paths[0] ?? "")}`;
-      case "patch_concept":
+      case "concept_patch":
         return `patch ${shortPath(s.paths[0] ?? "")}`;
-      case "delete_concept":
+      case "concept_delete":
         return `delete ${shortPath(s.paths[0] ?? "")}`;
+      case "link_add":
+        return `link ${shortPath(s.paths[0] ?? "")}`;
       default:
         return s.tool;
     }

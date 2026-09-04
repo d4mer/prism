@@ -79,7 +79,7 @@ export async function regenerateIndexChain(bundle: Bundle, dir: string): Promise
 /**
  * Remove directories whose only content is the auto-generated index.md
  * (issue #10: agents move/merge concepts and leave undeletable husks —
- * delete_concept refuses reserved filenames by design, so cleanup must be
+ * concept_delete refuses reserved filenames by design, so cleanup must be
  * deterministic). Bottom-up over the whole bundle; a directory emptied by
  * pruning its children is pruned too. The root and dot-directories
  * (.traces etc.) are never touched. Returns removed bundle paths.

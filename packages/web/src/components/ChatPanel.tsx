@@ -5,7 +5,7 @@ import { MarkdownRenderer } from "../components/MarkdownRenderer";
 import { authHeaders } from "../api";
 import type { AppConfig } from "../api";
 
-const WRITE_TOOLS = new Set(["write_concept", "patch_concept", "delete_concept"]);
+const WRITE_TOOLS = new Set(["concept_write", "concept_patch", "concept_delete", "link_add"]);
 
 /**
  * Chat with the same agent the MCP server runs. Tool calls render inline —

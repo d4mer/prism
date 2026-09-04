@@ -6,9 +6,11 @@ The layer beneath your agents: a self-wiring, plain-markdown memory. Every fact 
 
 Bundles follow the [Open Knowledge Format (OKF) v0.1 spec](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) — plain markdown files with YAML frontmatter, readable by humans, diffable in git, portable across tools.
 
-**Three ways in, one agent:**
+**Three ways in, one agent — and a granular tool surface that needs no agent at all:**
 
-- **MCP server** — `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain` tools over stdio or streamable HTTP. Each call drives an internal LLM agent with the OKF spec in its system prompt.
+- **MCP server** — two tiers of tools over stdio or streamable HTTP, no LLM required to start the server or use the first tier:
+  - **Granular (zero LLM, ever):** `concept_search` / `concept_read` / `concept_list` / `graph_lint` / `concept_write` / `concept_patch` / `concept_delete` / `link_add`. A capable calling agent files knowledge itself, one round trip per action — no server-side model involved at any point.
+  - **Coarse (needs a provider):** `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain`. Convenience for weaker clients — each call drives an internal LLM agent (with the OKF spec in its system prompt) that ends up calling the same granular tools above. `memory_status` is deterministic and needs no provider.
 - **Web UI** — browse the bundle (tree, concept viewer, update log, conformance badge), see the memory as an Obsidian-style **force-directed graph** (drag/pan/zoom, colored by type, sized by connections, orphans ringed red, click to open), and chat with the same agent to test it. Tool calls render inline so you can watch it work.
 - **Query-path replay** — every agent run (query/mutation/chat) records its traversal (searches → reads → writes) as a compact notation, persisted under `<bundle>/.traces/`. The graph view lists recent runs; selecting one replays the path as numbered directed hops over the graph — visited concepts ringed, search hits dotted, everything else faded.
 - **CLI** — `pnpm agent:query "..."` / `pnpm agent:mutate "..."` smoke entries.

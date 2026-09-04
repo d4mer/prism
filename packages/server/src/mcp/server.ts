@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { KnowledgeBase, runMutation, runQueryCached, type MutationOutcome } from "@prism/core";
+import { CORE_TOOLS, KnowledgeBase, runMutation, runQueryCached, type MutationOutcome, type ToolDefinition } from "@prism/core";
 import { buildSeedMemory, seedInstructions } from "./seed.js";
 
 /**
@@ -63,6 +63,41 @@ export async function buildMcpServer(kb: KnowledgeBase): Promise<McpServer> {
       console.error(`[prism] seed refresh failed: ${(err as Error).message}`);
     }
   };
+
+  // ── Granular tool surface (PRISM-13) ──────────────────────────────────
+  // Every CORE_TOOLS entry, registered as its own first-class MCP tool. A
+  // capable client agent can now file knowledge itself in one round trip
+  // per action, with no LLM on this side of the connection at all — these
+  // handlers are the exact same functions the internal agent's own tool
+  // loop calls (buildReadTools/buildWriteTools in agent/tools.ts), so the
+  // two surfaces are provably consistent, not parallel implementations.
+  // Includes concept_delete, which PRISM-13's minimum tool list didn't
+  // name but which is already a safe, deterministic registry entry —
+  // held back from no adapter.
+  for (const def of CORE_TOOLS as readonly ToolDefinition[]) {
+    const shape = (def.inputSchema as unknown as { shape?: Record<string, unknown> }).shape ?? {};
+    server.registerTool(
+      def.name,
+      {
+        title: def.title,
+        description: def.description,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        inputSchema: shape as any,
+      },
+      async (input: unknown) => {
+        try {
+          const result = await def.handler(kb, input);
+          if (def.mutates) await refreshSeed();
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: (err as Error).message }],
+            isError: true,
+          };
+        }
+      }
+    );
+  }
 
   const mutationOutcomeResponse = (outcome: MutationOutcome) => {
     if (outcome.ok) {

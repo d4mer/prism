@@ -50,7 +50,7 @@ function usageLabel(usage?: { inputTokens: number; outputTokens: number }): stri
 function traceVisits(trace: QueryTrace): { path: string; seq: number; write: boolean }[] {
   const visits: { path: string; seq: number; write: boolean }[] = [];
   for (const step of trace.steps) {
-    if (step.tool === "read_concept" || step.write) {
+    if (step.tool === "concept_read" || step.write) {
       const p = step.paths[0];
       if (p && visits[visits.length - 1]?.path !== p) {
         visits.push({ path: p, seq: step.seq, write: !!step.write });
@@ -170,7 +170,7 @@ export function GraphView({
   const searchHitSet = useMemo(() => {
     if (!activeTrace) return new Set<string>();
     return new Set(
-      activeTrace.steps.filter((s) => s.tool === "search_knowledge").flatMap((s) => s.paths)
+      activeTrace.steps.filter((s) => s.tool === "concept_search").flatMap((s) => s.paths)
     );
   }, [activeTrace]);
 
