@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -294,6 +294,62 @@ describe("link_add", () => {
     await expect(
       linkAddTool.handler(kb, { source: "/a.md", target: "/a.md", log_summary: "x" })
     ).rejects.toThrow(/must be a different concept/i);
+  });
+});
+
+describe("granular registry operations make zero provider requests (PRISM-15)", () => {
+  it("issues no network requests across a full write/read/search/list/patch/link/lint/delete round trip", async () => {
+    const fetchSpy = vi.fn(() => {
+      throw new Error("a registry handler called fetch — that would mean a provider request was made");
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    try {
+      await conceptWriteTool.handler(kb, {
+        path: "/a.md",
+        frontmatter: { type: "T" },
+        body: "body",
+        log_summary: "seed",
+      });
+      await conceptWriteTool.handler(kb, {
+        path: "/b.md",
+        frontmatter: { type: "T" },
+        body: "body",
+        log_summary: "seed",
+      });
+      await conceptReadTool.handler(kb, { path: "/a.md" });
+      await conceptSearchTool.handler(kb, { query: "body" });
+      await conceptListTool.handler(kb, {});
+      await conceptPatchTool.handler(kb, {
+        path: "/a.md",
+        frontmatter: { description: "x" },
+        log_summary: "patch",
+      });
+      await linkAddTool.handler(kb, { source: "/a.md", target: "/b.md", log_summary: "link" });
+      await graphLintTool.handler(kb, {});
+      await conceptDeleteTool.handler(kb, { path: "/b.md", log_summary: "cleanup" });
+
+      // Same guarantee through the exact render a coarse memory_add/memory_query
+      // run drives internally (buildReadTools/buildWriteTools over CORE_TOOLS) —
+      // proves the registry surface itself never reaches for a provider, whichever
+      // door a caller comes through.
+      const filesChanged = new Set<string>();
+      const write = buildWriteTools(kb, filesChanged) as Record<
+        string,
+        { execute: (input: unknown) => Promise<unknown> }
+      >;
+      await write.concept_write.execute({
+        path: "/c.md",
+        frontmatter: { type: "T" },
+        body: "body",
+        log_summary: "via agent loop",
+      });
+      const read = buildReadTools(kb) as Record<string, { execute: (input: unknown) => Promise<unknown> }>;
+      await read.concept_read.execute({ path: "/c.md" });
+
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
