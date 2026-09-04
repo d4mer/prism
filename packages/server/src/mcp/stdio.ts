@@ -14,9 +14,13 @@ if (!bundleRoot) {
   process.exit(1);
 }
 
-// Validate LLM config at startup — fail fast with a clear error. stdio's
-// only output channel to the user is stderr; stdout is reserved for the
-// MCP protocol stream.
+// Validate LLM config at startup — log to stderr, but don't crash. Tier 0/1
+// tools (memory_status, deterministic memory_maintain, and the registry's
+// search/read/list/lint/write/patch/delete operations) work with no LLM at
+// all; only Tier 2 operations need one, and they already fail per-request
+// with a clear error via agent.ts's own try/catch. stdio's only output
+// channel to the user is stderr; stdout is reserved for the MCP protocol
+// stream.
 try {
   const primaryConfig = resolveModelConfig();
   console.error(
@@ -29,9 +33,11 @@ try {
     );
   }
 } catch (err) {
-  console.error(`[understory] LLM configuration error: ${(err as Error).message}`);
-  console.error("[understory] Set LLM_API_BASE_URL + LLM_API_KEY, or configure legacy env vars.");
-  process.exit(1);
+  console.error(`[prism] no LLM configured: ${(err as Error).message}`);
+  console.error(
+    "[prism] starting anyway — Tier 0/1 tools (status, lint, search, read, write, patch, delete) work without one. " +
+      "Set LLM_API_BASE_URL + LLM_API_KEY + LLM_API_FORMAT + LLM_MODEL to enable memory_query/memory_add/memory_update."
+  );
 }
 
 const kb = new KnowledgeBase(bundleRoot, {

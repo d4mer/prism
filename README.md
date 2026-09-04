@@ -212,8 +212,23 @@ This design mirrors the pattern in Karpathy's [LLM Wiki](https://gist.github.com
 ## Tests
 
 ```bash
-pnpm test                                  # core: 18 tests (spec §5/§6/§7/§9, sandbox, search, concurrency)
-pnpm --filter @understory/server exec tsx scripts/mcp-smoke.mts   # MCP stdio round-trip (needs SMOKE_BUNDLE + an API key)
+pnpm install                               # first run on a mounted/FUSE filesystem? see .npmrc — package-import-method=copy avoids an EPERM on install there
+pnpm test                                  # core (91 tests) + server (28 tests): spec, registry, sandbox (incl. symlink escapes), search, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
+
+# Manual/exploratory checks — no LLM required for either of these:
+pnpm --filter @prism/server exec tsx scripts/registry-smoke.mts   # CORE_TOOLS registry CRUD round-trip against a throwaway bundle copy
+SMOKE_BUNDLE=/path/to/bundle pnpm --filter @prism/server exec tsx scripts/mcp-smoke.mts   # MCP stdio round-trip; runs fully with no provider configured (memory_query is skipped unless OPENROUTER_API_KEY is set)
+```
+
+Starting the server itself needs only `BUNDLE_ROOT`:
+
+```bash
+pnpm --filter @prism/server build
+BUNDLE_ROOT=./sample-bundle PORT=3800 pnpm --filter @prism/server start
+# → http://localhost:3800  (web UI + /api + /mcp) — Tier 0/1 tools (memory_status,
+#   a healthy memory_maintain, and the registry ops) work immediately; memory_query/
+#   memory_add/memory_update return a clear "no LLM configured" result per-call until
+#   LLM_API_BASE_URL + LLM_API_KEY + LLM_API_FORMAT + LLM_MODEL are set.
 ```
 
 ## Environment

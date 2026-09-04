@@ -22,6 +22,7 @@ export function ChatPanel({
 }) {
   const [input, setInput] = useState("");
   const [model, setModel] = useState("");
+  const [chatError, setChatError] = useState<string | null>(null);
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
       api: "/api/chat",
@@ -29,9 +30,12 @@ export function ChatPanel({
       body: () => ({ model: model || undefined }),
     }),
     onFinish: () => onMutation(), // refresh browse pane; agent may have written files
+    onError: (err) => setChatError(err.message),
   });
 
   const busy = status === "submitted" || status === "streaming";
+  // null = still loading /api/config; false = loaded and confirmed no provider.
+  const noProvider = config?.configured === false;
 
   return (
     <div className="flex h-full flex-col">
@@ -113,24 +117,41 @@ export function ChatPanel({
           </div>
         ))}
         {busy && <div className="animate-pulse text-xs text-zinc-500">agent working…</div>}
+        {chatError && (
+          <div className="rounded-lg border border-red-900/60 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+            {chatError}
+          </div>
+        )}
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!input.trim() || busy) return;
-          sendMessage({ text: input });
-          setInput("");
-        }}
-        className="border-t border-zinc-800 p-3"
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask or teach the knowledge base…"
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-cyan-600"
-        />
-      </form>
+      {noProvider ? (
+        <div className="border-t border-zinc-800 p-3 text-xs text-zinc-500">
+          No LLM provider configured — chat is unavailable. The knowledge base itself still
+          works fully (browse, search, and any granular MCP tool). Set{" "}
+          <code className="text-zinc-400">LLM_API_BASE_URL</code> +{" "}
+          <code className="text-zinc-400">LLM_API_KEY</code> +{" "}
+          <code className="text-zinc-400">LLM_API_FORMAT</code> +{" "}
+          <code className="text-zinc-400">LLM_MODEL</code> to enable it.
+        </div>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!input.trim() || busy) return;
+            setChatError(null);
+            sendMessage({ text: input });
+            setInput("");
+          }}
+          className="border-t border-zinc-800 p-3"
+        >
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask or teach the knowledge base…"
+            className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-cyan-600"
+          />
+        </form>
+      )}
     </div>
   );
 }

@@ -24,7 +24,15 @@ startDreamer(kb);
 
 const app = express();
 
-// Validate LLM config at startup — fail fast with a clear error.
+// Validate LLM config at startup — log clearly, but don't crash. Tier 0/1
+// tools (memory_status, deterministic memory_maintain, and the registry's
+// search/read/list/lint/write/patch/delete operations) work with no LLM at
+// all. Only Tier 2 operations (memory_query's deep-agent fallback,
+// memory_add, memory_update, an unhealthy memory_maintain) need one, and
+// they already fail per-request with a clear error via agent.ts's own
+// try/catch — they do not need the process to refuse to start.
+// TODO(PRISM-14): surface this state to clients (e.g. an MCP resource or
+// memory_status field) instead of only a startup log line.
 try {
   const primaryConfig = resolveModelConfig();
   console.log(
@@ -37,9 +45,11 @@ try {
     );
   }
 } catch (err) {
-  console.error(`[understory] LLM configuration error: ${(err as Error).message}`);
-  console.error("[understory] Set LLM_API_BASE_URL + LLM_API_KEY, or configure legacy env vars.");
-  process.exit(1);
+  console.warn(`[prism] no LLM configured: ${(err as Error).message}`);
+  console.warn(
+    "[prism] starting anyway — Tier 0/1 tools (status, lint, search, read, write, patch, delete) work without one. " +
+      "Set LLM_API_BASE_URL + LLM_API_KEY + LLM_API_FORMAT + LLM_MODEL to enable memory_query/memory_add/memory_update."
+  );
 }
 
 // Reflect the request origin; expose Mcp-Session-Id so browser MCP clients can

@@ -73,9 +73,11 @@ export interface QueryTrace extends TraceSummary {
 }
 
 export interface AppConfig {
-  model: string;
-  format: "openai" | "anthropic" | string;
-  fallbackConfigured: boolean;
+  /** False when no LLM provider is configured — chat/deliberation tools are unavailable. */
+  configured: boolean;
+  model?: string;
+  format?: "openai" | "anthropic" | string;
+  fallbackConfigured?: boolean;
 }
 
 const TOKEN_KEY = "prism-token";

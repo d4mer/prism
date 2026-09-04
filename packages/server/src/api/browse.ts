@@ -79,14 +79,21 @@ export function browseRouter(kb: KnowledgeBase): Router {
     res.json(await kb.listTypes());
   });
 
+  // Never throws: absence of a provider is reported as data, not a 500 —
+  // this is what the web UI polls to decide whether to offer chat at all.
   router.get("/config", (_req, res) => {
-    const config = resolveModelConfig();
-    const fallback = resolveFallbackConfig();
-    res.json({
-      model: config.model,
-      format: config.format,
-      fallbackConfigured: fallback !== null,
-    });
+    try {
+      const config = resolveModelConfig();
+      const fallback = resolveFallbackConfig();
+      res.json({
+        configured: true,
+        model: config.model,
+        format: config.format,
+        fallbackConfigured: fallback !== null,
+      });
+    } catch {
+      res.json({ configured: false });
+    }
   });
 
   return router;

@@ -16,7 +16,18 @@ export function chatRouter(kb: KnowledgeBase): Router {
 
   router.post("/chat", async (req, res) => {
     const { messages, model } = req.body as ChatBody;
-    const { result } = await streamChat(kb, convertToModelMessages(messages), { model });
+    // Absence of a provider is reported as a clean JSON error, not an
+    // unhandled rejection — the chat UI reads this via useChat's onError.
+    let result: Awaited<ReturnType<typeof streamChat>>["result"];
+    try {
+      ({ result } = await streamChat(kb, convertToModelMessages(messages), { model }));
+    } catch (err) {
+      res.status(503).json({
+        error: (err as Error).message,
+        hint: "Set LLM_API_BASE_URL + LLM_API_KEY + LLM_API_FORMAT + LLM_MODEL to enable chat.",
+      });
+      return;
+    }
     const response = result.toUIMessageStreamResponse();
     res.status(response.status);
     response.headers.forEach((value, key) => res.setHeader(key, value));
