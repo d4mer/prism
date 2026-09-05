@@ -152,6 +152,15 @@ export class TraceStore {
     }
   }
 
+  /** Read one trace by id. Returns undefined if missing or corrupt — never throws. */
+  async get(id: string): Promise<QueryTrace | undefined> {
+    try {
+      return JSON.parse(await fs.readFile(path.join(this.dir, `${id}.json`), "utf-8"));
+    } catch {
+      return undefined;
+    }
+  }
+
   async list(): Promise<QueryTrace[]> {
     let files: string[];
     try {

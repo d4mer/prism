@@ -1,2 +1,14 @@
 #!/usr/bin/env node
-import("../dist/mcp/stdio.js");
+// PRISM-26: dispatch "prism maintain <bundle-path> [...]" to the stateless
+// maintain CLI (no server involved); anything else falls back to the
+// existing behavior (an MCP stdio server on stdin/stdout).
+const [, , cmd, ...rest] = process.argv;
+
+if (cmd === "maintain") {
+  const { runMaintainCli } = await import("@prism/core");
+  const { exitCode, output } = await runMaintainCli(rest);
+  console.log(output);
+  process.exit(exitCode);
+} else {
+  await import("../dist/mcp/stdio.js");
+}
