@@ -8,6 +8,12 @@ import { validateBundle } from "./validate.js";
 import { lintBundle, type LintReport } from "./lint.js";
 import { buildGraph, type GraphData } from "./graph.js";
 import { queryAsOf } from "./asof.js";
+import {
+  rebuildSearchIndex as rebuildSearchIndexFile,
+  tryIndexedSearch,
+  indexUpsertConcept,
+  indexRemoveConcept,
+} from "./search-index.js";
 import type {
   Concept,
   ConceptFrontmatter,
@@ -48,7 +54,11 @@ export class KnowledgeBase {
     return this.bundle.listTree(dir);
   }
 
-  search(query: string, options?: SearchOptions): Promise<SearchHit[]> {
+  async search(query: string, options?: SearchOptions): Promise<SearchHit[]> {
+    // PRISM-35: try the derived SQLite index first (same results, no scan);
+    // fall back to the direct bundle scan if the index is missing/stale/corrupt.
+    const indexed = await tryIndexedSearch(this.bundle, query, options);
+    if (indexed) return indexed;
     return searchBundle(this.bundle, query, options);
   }
 
@@ -83,6 +93,15 @@ export class KnowledgeBase {
     return queryAsOf(this.bundle, asOfDate);
   }
 
+  /**
+   * PRISM-35: wipe and fully repopulate the derived SQLite search index from
+   * the markdown bundle alone. Routed through the mutation queue so it can't
+   * race a concurrent write/patch/delete/supersede.
+   */
+  rebuildSearchIndex(): Promise<{ count: number }> {
+    return this.enqueue(() => rebuildSearchIndexFile(this.bundle));
+  }
+
   // ── Mutations (serialized; auto index + log + optional commit) ──────
 
   writeConcept(
@@ -94,7 +113,7 @@ export class KnowledgeBase {
     return this.enqueue(async () => {
       const existed = await this.bundle.exists(conceptPath);
       const concept = await this.bundle.writeConcept(conceptPath, frontmatter, body);
-      await this.afterMutation(concept.path, existed ? "Update" : "Creation", logSummary);
+      await this.afterMutation(concept.path, existed ? "Update" : "Creation", logSummary, concept);
       return concept;
     });
   }
@@ -106,7 +125,7 @@ export class KnowledgeBase {
   ): Promise<Concept> {
     return this.enqueue(async () => {
       const concept = await this.bundle.patchConcept(conceptPath, changes);
-      await this.afterMutation(concept.path, "Update", logSummary);
+      await this.afterMutation(concept.path, "Update", logSummary, concept);
       return concept;
     });
   }
@@ -156,6 +175,15 @@ export class KnowledgeBase {
       await regenerateIndexChain(this.bundle, newDir);
       if (oldDir !== newDir) await regenerateIndexChain(this.bundle, oldDir);
 
+      // PRISM-35: keep the derived index in sync with both sides of the
+      // supersession — best-effort, never fails the mutation itself.
+      try {
+        await indexUpsertConcept(this.bundle, created);
+        await indexUpsertConcept(this.bundle, updatedOld);
+      } catch (err) {
+        console.error(`[prism] search index maintenance failed: ${(err as Error).message}`);
+      }
+
       const oldLink = `[${updatedOld.path.split("/").pop()}](${updatedOld.path})`;
       const newLink = `[${created.path.split("/").pop()}](${created.path})`;
       await appendLog(this.bundle, "Supersession", logSummary || `${newLink} supersedes ${oldLink}.`);
@@ -183,13 +211,28 @@ export class KnowledgeBase {
   private async afterMutation(
     conceptPath: string,
     action: LogAction,
-    logSummary: string
+    logSummary: string,
+    concept?: Concept
   ): Promise<void> {
     // Sweep husks first (dirs holding only their auto-generated index.md) so
     // the reindex below never resurrects a pruned directory. Whole-bundle:
     // cheap at this scale, and it also heals husks from before this feature.
     await pruneEmptyDirs(this.bundle);
     await regenerateIndexChain(this.bundle, path.posix.dirname(conceptPath));
+
+    // PRISM-35: keep the derived search index in sync with in-band writes.
+    // Best-effort (mirrors git autocommit below) — the bundle write itself
+    // already succeeded and must not be undone by index-maintenance failure.
+    try {
+      if (action === "Deletion") {
+        await indexRemoveConcept(this.bundle, conceptPath);
+      } else if (concept) {
+        await indexUpsertConcept(this.bundle, concept);
+      }
+    } catch (err) {
+      console.error(`[prism] search index maintenance failed: ${(err as Error).message}`);
+    }
+
     const linked = `[${conceptPath.split("/").pop()}](${conceptPath})`;
     await appendLog(this.bundle, action, logSummary || `${action} of ${linked}.`);
     if (this.git) {
