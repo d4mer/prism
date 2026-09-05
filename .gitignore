@@ -6,3 +6,5 @@ dist/
 .DS_Store
 coverage/
 demo-bundle/
+sample-bundle 2/
+understory-bundle-*.zip

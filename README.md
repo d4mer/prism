@@ -191,6 +191,22 @@ claude mcp add --transport http prism http://host:3800/mcp \
 
 The stdio transport needs no token — it's a local process spawned by the client.
 
+**Open WebUI auth options** (registering Prism as its MCP server or OpenAPI tool server — see the next section): with no `AUTH_TOKEN` set, register with no auth. With `AUTH_TOKEN` set, use Open WebUI's bearer-token auth field. Prism does not implement OAuth 2.1 itself — if a deployment needs it (e.g. Open WebUI itself is exposed to untrusted users and its admin wants per-user delegated auth rather than one shared bearer token), put an OAuth-aware reverse proxy in front of Prism; a shared bearer token is the supported mode Prism speaks natively.
+
+### Open WebUI
+
+Open WebUI added **native MCP support in v0.6.31**, over **streamable HTTP only** — the exact transport already served at `/mcp` — so registering Prism needs no proxy or adapter of any kind. `mcpo` (the stdio/SSE→OpenAPI bridge) is not relevant here; it only matters for MCP servers that *don't* speak streamable HTTP.
+
+**Admin setup** — Settings → Admin → Integrations → External Tool Servers (admin-only; see below for non-admins):
+
+1. Add server, URL `http://host:3800/mcp`.
+2. Auth: `None` if the server has no `AUTH_TOKEN` set (open LAN), or `Bearer` with the token in the Key field if it does — the same `AUTH_TOKEN` used everywhere else in this README, checked by the identical middleware every other adapter goes through (see [Auth](#auth)). Don't pick `Bearer` with an empty Key — Prism, like most MCP servers, rejects that immediately rather than treating it as no auth.
+3. Save. Open WebUI discovers the granular tools (`concept_search`, `concept_read`, `concept_list`, `graph_lint`, `concept_write`, `concept_patch`, `concept_delete`, `link_add`) via `tools/list` and can call them directly from a chat — no separate LLM hop on Prism's side, since these are plain deterministic registry operations, not the agent-backed `memory_*` tools.
+
+**Non-admin users**: Open WebUI restricts registering MCP servers to admins. A user granted the **Direct Tool Servers** permission can add their *own* tool server under Settings → Integrations, but only as an **OpenAPI** connection — the connection type is locked, with no MCP option, for personal servers. Point that at `http://host:3800/api/v1/openapi.json` instead (see [REST API & OpenAPI](#rest-api--openapi-apiv1) below) — same registry operations, same auth, just the REST surface rather than MCP.
+
+**Minimum version**: 0.6.31 (native MCP support). Anything older needs `mcpo` in front regardless of what this README says about not needing it.
+
 ### REST API & OpenAPI (`/api/v1`)
 
 Every deterministic registry operation (search/read/list/write/patch/delete/link/lint — the same ones MCP exposes) is also available as a plain REST endpoint under `/api/v1`, generated from the tool registry rather than hand-maintained:
