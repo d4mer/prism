@@ -11,6 +11,7 @@ import { chatRouter } from "./api/chat.js";
 import { registryRestRouter } from "./api/registry-rest.js";
 import { buildOpenApiDocument } from "./openapi/generate.js";
 import { bearerAuth } from "./auth.js";
+import { exposureWarning } from "./security-warning.js";
 import { startDreamer } from "./dreamer.js";
 
 const bundleRoot = process.env.BUNDLE_ROOT;
@@ -78,10 +79,10 @@ app.use(express.json({ limit: "4mb" }));
 // AUTH_TOKEN is set. Static web UI stays open and prompts for the token.
 const authToken = process.env.AUTH_TOKEN;
 if (authToken) {
-  app.use(["/mcp", "/api"], bearerAuth(authToken));
-  console.log("[prism] auth: bearer token required for /mcp and /api");
+  app.use(["/mcp", "/api", "/api/v1"], bearerAuth(authToken));
+  console.log("[prism] auth: bearer token required for /mcp, /api and /api/v1");
 } else {
-  console.log("[prism] auth: disabled (set AUTH_TOKEN to protect /mcp and /api)");
+  console.log("[prism] auth: disabled (set AUTH_TOKEN to protect /mcp, /api and /api/v1)");
 }
 
 app.use("/mcp", mcpRouter(kb));
@@ -114,6 +115,11 @@ if (existsSync(webDist)) {
 }
 
 const port = Number(process.env.PORT ?? 3800);
-app.listen(port, "0.0.0.0", () => {
+const host = process.env.HOST ?? "0.0.0.0";
+app.listen(port, host, () => {
   console.log(`prism serving bundle ${bundleRoot} on :${port} (web + /api + /mcp)`);
+  // PRISM-19: tenet 9 is "open on localhost, secured the moment it is
+  // exposed" — this is the moment something actually checks that.
+  const warning = exposureWarning(host, authToken, port);
+  if (warning) console.warn(warning);
 });

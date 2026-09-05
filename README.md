@@ -189,7 +189,9 @@ claude mcp add --transport http prism http://host:3800/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
-The stdio transport needs no token — it's a local process spawned by the client.
+The stdio transport needs no token — it's a local process spawned by the client, never exposed over the network.
+
+If the server is reachable from outside the machine it's running on (the default `HOST=0.0.0.0` bind) with no `AUTH_TOKEN` set, it logs a loud startup warning — anyone who can reach that address can read *and write* the knowledge base with no credentials. Set `AUTH_TOKEN`, or set `HOST=127.0.0.1` for a setup that's never reachable off-box in the first place.
 
 **Open WebUI auth options** (registering Prism as its MCP server or OpenAPI tool server — see the next section): with no `AUTH_TOKEN` set, register with no auth. With `AUTH_TOKEN` set, use Open WebUI's bearer-token auth field. Prism does not implement OAuth 2.1 itself — if a deployment needs it (e.g. Open WebUI itself is exposed to untrusted users and its admin wants per-user delegated auth rather than one shared bearer token), put an OAuth-aware reverse proxy in front of Prism; a shared bearer token is the supported mode Prism speaks natively.
 
