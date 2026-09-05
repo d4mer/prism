@@ -127,7 +127,7 @@ export const conceptWriteTool: ToolDefinition<ConceptWriteInput, ConceptWriteOut
   name: "concept_write",
   title: "Write concept",
   description:
-    "Create a new concept or fully overwrite an existing one. Frontmatter must include a non-empty 'type'. index.md and log.md maintenance is automatic — never write those.",
+    "Create a new concept or fully overwrite an existing one. Frontmatter must include a non-empty 'type'. index.md and log.md maintenance is automatic — never write those. Optional temporal/provenance fields (asserted, source, confidence, supersedes, superseded_by) are validated when present (PRISM-22).",
   inputSchema: conceptWriteInput,
   mutates: true,
   requiresDeliberation: false,
@@ -176,7 +176,7 @@ export const conceptPatchTool: ToolDefinition<ConceptPatchInput, ConceptPatchOut
   name: "concept_patch",
   title: "Patch concept",
   description:
-    "Targeted update of an existing concept: merge frontmatter keys (null deletes a key) and/or replace one top-level '# Section' body section. Prefer this over concept_write for small edits — a frontmatter-only patch leaves the body byte-identical. For adding a cross-reference to another concept, prefer link_add.",
+    "Targeted update of an existing concept: merge frontmatter keys (null deletes a key) and/or replace one top-level '# Section' body section. Prefer this over concept_write for small edits — a frontmatter-only patch leaves the body byte-identical. For adding a cross-reference to another concept, prefer link_add. Temporal/provenance fields (asserted, source, confidence, supersedes, superseded_by) are validated the same way as concept_write.",
   inputSchema: conceptPatchInput,
   mutates: true,
   requiresDeliberation: false,

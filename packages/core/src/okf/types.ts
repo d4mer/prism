@@ -6,6 +6,21 @@ export interface ConceptFrontmatter {
   resource?: string;
   tags?: string[];
   timestamp?: string;
+  /**
+   * Temporal & provenance fields (PRISM-22). All optional and additive — a
+   * concept written before these existed stays fully valid. See okf/temporal.ts
+   * for the validation rules enforced whenever any of these are set.
+   */
+  /** ISO 8601 date/time this belief was asserted. */
+  asserted?: string;
+  /** Where this belief came from: "session" | "agent" | "human" | "document". */
+  source?: string;
+  /** How firmly held, 0 (uncertain) to 1 (certain). */
+  confidence?: number;
+  /** Bundle-relative path of the concept this one replaces. */
+  supersedes?: string;
+  /** Bundle-relative path of the concept that replaced this one. */
+  superseded_by?: string;
   /** Producer-defined keys are permitted and preserved. */
   [key: string]: unknown;
 }
@@ -39,7 +54,7 @@ export interface SearchHit {
   score: number;
 }
 
-export type LogAction = "Creation" | "Update" | "Deletion";
+export type LogAction = "Creation" | "Update" | "Deletion" | "Supersession";
 
 export interface LogEntry {
   date: string; // YYYY-MM-DD

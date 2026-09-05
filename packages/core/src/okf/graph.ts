@@ -39,12 +39,14 @@ export async function scanGraph(bundle: Bundle): Promise<GraphScan> {
   const paths = await bundle.listConceptPaths();
   const known = new Set(paths);
 
-  const nodes = new Map<string, GraphNode>();
+  type Scratch = GraphNode & { _body?: string; _temporalTargets?: string[] };
+  const nodes = new Map<string, Scratch>();
   for (const p of paths) {
     let title: string | undefined;
     let type: string | undefined;
     let description: string | undefined;
     let body = "";
+    const temporalTargets: string[] = [];
     try {
       const concept = await bundle.readConcept(p);
       body = concept.body;
@@ -52,12 +54,17 @@ export async function scanGraph(bundle: Bundle): Promise<GraphScan> {
       if (typeof fm.title === "string") title = fm.title;
       if (typeof fm.type === "string") type = fm.type;
       if (typeof fm.description === "string") description = fm.description;
+      // PRISM-22: supersedes/superseded_by are link edges too, so a dangling
+      // one (e.g. its target was later deleted, out of band) surfaces through
+      // graph_lint exactly like a broken body link, not just at write time.
+      for (const field of ["supersedes", "superseded_by"] as const) {
+        const v = fm[field];
+        if (typeof v === "string" && v.length > 0) temporalTargets.push(v);
+      }
     } catch {
       // Permissive: unreadable concept still appears as a node.
     }
-    nodes.set(p, { path: p, title, type, description, links: 0 });
-    nodes.get(p)!.links = 0;
-    (nodes.get(p) as GraphNode & { _body?: string })._body = body;
+    nodes.set(p, { path: p, title, type, description, links: 0, _body: body, _temporalTargets: temporalTargets });
   }
 
   const edges: GraphEdge[] = [];
@@ -66,10 +73,10 @@ export async function scanGraph(bundle: Bundle): Promise<GraphScan> {
   for (const p of paths) inbound.set(p, 0);
 
   for (const [source, node] of nodes) {
-    const body = (node as GraphNode & { _body?: string })._body ?? "";
+    const body = node._body ?? "";
     const targeted = new Set<string>();
-    for (const match of body.matchAll(LINK_RE)) {
-      const target = match[1];
+    const targets = [...body.matchAll(LINK_RE)].map((m) => m[1]).concat(node._temporalTargets ?? []);
+    for (const target of targets) {
       if (target === source || targeted.has(target)) continue;
       targeted.add(target);
       if (known.has(target)) {
@@ -79,7 +86,8 @@ export async function scanGraph(bundle: Bundle): Promise<GraphScan> {
         brokenLinks.push({ path: source, target });
       }
     }
-    delete (node as GraphNode & { _body?: string })._body;
+    delete node._body;
+    delete node._temporalTargets;
   }
 
   for (const edge of edges) {

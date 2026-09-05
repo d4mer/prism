@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseDoc, serializeDoc, hasNonEmptyType } from "./frontmatter.js";
 import { RESERVED_FILENAMES } from "./types.js";
 import type { Concept, ConceptFrontmatter, TreeNode } from "./types.js";
+import { validateTemporalFrontmatter, TemporalFrontmatterError } from "./temporal.js";
 
 export class BundleError extends Error {
   constructor(
@@ -149,6 +150,14 @@ export class Bundle {
         `Frontmatter must include a non-empty "type" field (OKF spec §5)`,
         "INVALID_FRONTMATTER"
       );
+    }
+    try {
+      await validateTemporalFrontmatter(this, canonical, frontmatter);
+    } catch (err) {
+      if (err instanceof TemporalFrontmatterError) {
+        throw new BundleError(err.message, "INVALID_FRONTMATTER");
+      }
+      throw err;
     }
     const stamped: ConceptFrontmatter = {
       ...frontmatter,
