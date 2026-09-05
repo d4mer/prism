@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import { KnowledgeBase, resolveFallbackConfig, resolveModelConfig } from "@prism/core";
+import swaggerUi from "swagger-ui-express";
 import { mcpRouter } from "./mcp/http.js";
 import { browseRouter } from "./api/browse.js";
 import { chatRouter } from "./api/chat.js";
+import { registryRestRouter } from "./api/registry-rest.js";
+import { buildOpenApiDocument } from "./openapi/generate.js";
 import { bearerAuth } from "./auth.js";
 import { startDreamer } from "./dreamer.js";
 
@@ -84,6 +87,22 @@ if (authToken) {
 app.use("/mcp", mcpRouter(kb));
 app.use("/api", browseRouter(kb));
 app.use("/api", chatRouter(kb));
+
+// Versioned REST API (PRISM-17): the same browse/chat endpoints plus the
+// write/link/lint operations the unversioned /api never had, and a spec
+// generated from the tool registry rather than hand-maintained. The
+// unversioned /api above keeps working unchanged — nothing here replaces it.
+app.use("/api/v1", browseRouter(kb));
+app.use("/api/v1", chatRouter(kb));
+app.use("/api/v1", registryRestRouter(kb));
+app.get("/api/v1/openapi.json", (_req, res) => {
+  res.json(buildOpenApiDocument());
+});
+app.use(
+  "/api/v1/docs",
+  swaggerUi.serve,
+  swaggerUi.setup(buildOpenApiDocument(), { customSiteTitle: "Prism API" })
+);
 
 // Serve the built web UI in production (single container), with SPA fallback.
 const webDist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../web/dist");

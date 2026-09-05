@@ -117,7 +117,7 @@ pnpm monorepo:
 | Package | What |
 |---|---|
 | `packages/core` | OKF bundle layer (zero LLM) + agent (Vercel AI SDK tool loop: search/read/list/write/patch/delete) + provider registry |
-| `packages/server` | Express: MCP streamable-HTTP at `/mcp`, stdio bin, REST browse API at `/api/*`, streaming chat at `/api/chat`, serves the web build |
+| `packages/server` | Express: MCP streamable-HTTP at `/mcp`, stdio bin, REST browse API at `/api/*`, versioned REST + OpenAPI spec + Swagger docs at `/api/v1/*`, streaming chat at `/api/chat`, serves the web build |
 | `packages/web` | Vite + React + TS + Tailwind: bundle browser + agent chat (`useChat`) |
 
 Providers are configured through `LLM_API_BASE_URL`, `LLM_API_KEY`, `LLM_API_FORMAT` (`openai` or `anthropic`), and `LLM_MODEL`. Any OpenAI-compatible endpoint (DeepSeek, OpenAI, Groq, OpenRouter, llama.cpp, etc.) works with `LLM_API_FORMAT=openai`; Anthropic-compatible endpoints use `LLM_API_FORMAT=anthropic`. Optional fallback uses the matching `LLM_FALLBACK_*` variables.
@@ -190,6 +190,23 @@ claude mcp add --transport http prism http://host:3800/mcp \
 ```
 
 The stdio transport needs no token — it's a local process spawned by the client.
+
+### REST API & OpenAPI (`/api/v1`)
+
+Every deterministic registry operation (search/read/list/write/patch/delete/link/lint — the same ones MCP exposes) is also available as a plain REST endpoint under `/api/v1`, generated from the tool registry rather than hand-maintained:
+
+```
+GET    /api/v1/concepts?prefix=/apis        # concept_list
+GET    /api/v1/concepts/search?query=...    # concept_search  (also: type, tags, limit)
+GET    /api/v1/concepts/one?path=...        # concept_read
+GET    /api/v1/graph/lint                   # graph_lint
+POST   /api/v1/concepts                     # concept_write   (body: path, frontmatter, body, log_summary)
+PATCH  /api/v1/concepts                     # concept_patch   (body: path, frontmatter?, replace_section?, replace_body?, log_summary)
+DELETE /api/v1/concepts                     # concept_delete  (body: path, log_summary)
+POST   /api/v1/links                        # link_add        (body: source, target, label?, log_summary)
+```
+
+The spec itself is at `GET /api/v1/openapi.json`; browse it interactively at `/api/v1/docs`. Adding an operation to the registry adds it to both the REST surface and the spec with no separate edit — see `packages/server/src/openapi/`. Regenerate the static file (e.g. for CI diffing) with `pnpm --filter @prism/server run openapi:generate`. The pre-existing read-only browse endpoints (`/tree`, `/search`, `/log`, `/graph`, ...) keep working unversioned at `/api/*` and are also aliased at `/api/v1/*`.
 
 ### Seed memory
 
