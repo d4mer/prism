@@ -127,7 +127,7 @@ export const conceptWriteTool: ToolDefinition<ConceptWriteInput, ConceptWriteOut
   name: "concept_write",
   title: "Write concept",
   description:
-    "Create a new concept or fully overwrite an existing one. Frontmatter must include a non-empty 'type'. index.md and log.md maintenance is automatic — never write those. Optional temporal/provenance fields (asserted, source, confidence, supersedes, superseded_by) are validated when present (PRISM-22).",
+    "Create a new concept or fully overwrite an existing one. Frontmatter must include a non-empty 'type'. index.md and log.md maintenance is automatic — never write those. Optional temporal/provenance fields (asserted, source, confidence, supersedes, superseded_by) are validated when present (PRISM-22). To retire a belief and replace it with a new version, prefer concept_supersede over hand-setting supersedes/superseded_by here.",
   inputSchema: conceptWriteInput,
   mutates: true,
   requiresDeliberation: false,
@@ -176,7 +176,7 @@ export const conceptPatchTool: ToolDefinition<ConceptPatchInput, ConceptPatchOut
   name: "concept_patch",
   title: "Patch concept",
   description:
-    "Targeted update of an existing concept: merge frontmatter keys (null deletes a key) and/or replace one top-level '# Section' body section. Prefer this over concept_write for small edits — a frontmatter-only patch leaves the body byte-identical. For adding a cross-reference to another concept, prefer link_add. Temporal/provenance fields (asserted, source, confidence, supersedes, superseded_by) are validated the same way as concept_write.",
+    "Targeted update of an existing concept: merge frontmatter keys (null deletes a key) and/or replace one top-level '# Section' body section. Prefer this over concept_write for small edits — a frontmatter-only patch leaves the body byte-identical. For adding a cross-reference to another concept, prefer link_add. Temporal/provenance fields (asserted, source, confidence, supersedes, superseded_by) are validated the same way as concept_write. To retire a belief and replace it with a new version, prefer concept_supersede over hand-setting supersedes/superseded_by here.",
   inputSchema: conceptPatchInput,
   mutates: true,
   requiresDeliberation: false,
@@ -304,5 +304,57 @@ export const linkAddTool: ToolDefinition<LinkAddInput, LinkAddOutput> = {
     recordHotWrite(c.path);
     ctx?.trace?.record("link_add", `${src.path} -> ${tgt.path}`, [c.path], true);
     return { source: c.path, target: tgt.path, added: true, markdown };
+  },
+};
+
+// ── concept_supersede ───────────────────────────────────────────────
+// PRISM-23: deterministic belief-versioning built on PRISM-22's temporal
+// fields. Hand-setting supersedes/superseded_by via concept_write +
+// concept_patch works, but is two separate writes with two chances to get
+// the cross-links wrong and no single log entry tying them together. This
+// tool does both sides atomically under KnowledgeBase's mutation queue.
+
+const conceptSupersedeInput = z.object({
+  old_path: conceptPathSchema.describe("Concept being retired; must already exist"),
+  new_path: conceptPathSchema.describe("Path for the new concept that replaces it"),
+  frontmatter: frontmatterSchema.describe(
+    "Frontmatter for the new concept. 'supersedes' is set automatically to old_path — don't set it yourself."
+  ),
+  body: z.string().describe("Markdown body for the new concept (no frontmatter block)"),
+  log_summary: logSummarySchema,
+});
+type ConceptSupersedeInput = z.infer<typeof conceptSupersedeInput>;
+interface ConceptSupersedeOutput {
+  superseded: string;
+  created: string;
+}
+
+export const conceptSupersedeTool: ToolDefinition<ConceptSupersedeInput, ConceptSupersedeOutput> = {
+  name: "concept_supersede",
+  title: "Supersede concept",
+  description:
+    "Retire a belief and replace it with a new version in one atomic step: creates the new concept with 'supersedes' pointing at the old one, and patches 'superseded_by' onto the old concept pointing at the new one — both sides, one log entry. Prefer this over hand-editing supersedes/superseded_by with concept_write/concept_patch, which leaves the two writes unordered and unlinked if one fails partway.",
+  inputSchema: conceptSupersedeInput,
+  mutates: true,
+  requiresDeliberation: false,
+  async handler(kb, { old_path, new_path, frontmatter, body, log_summary }, ctx) {
+    const { old: oldConcept, new: newConcept } = await kb.supersede(
+      old_path,
+      new_path,
+      frontmatter,
+      body,
+      log_summary
+    );
+    ctx?.filesChanged?.add(oldConcept.path);
+    ctx?.filesChanged?.add(newConcept.path);
+    recordHotWrite(oldConcept.path);
+    recordHotWrite(newConcept.path);
+    ctx?.trace?.record(
+      "concept_supersede",
+      `${oldConcept.path} -> ${newConcept.path}`,
+      [oldConcept.path, newConcept.path],
+      true
+    );
+    return { superseded: oldConcept.path, created: newConcept.path };
   },
 };

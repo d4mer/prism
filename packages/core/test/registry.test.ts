@@ -15,6 +15,7 @@ import {
   conceptPatchTool,
   conceptReadTool,
   conceptSearchTool,
+  conceptSupersedeTool,
   conceptWriteTool,
   graphLintTool,
   linkAddTool,
@@ -34,7 +35,7 @@ afterEach(async () => {
 });
 
 describe("CORE_TOOLS registry", () => {
-  it("lists exactly the eight deterministic operations, correctly classified", () => {
+  it("lists exactly the nine deterministic operations, correctly classified", () => {
     const names = [...CORE_TOOLS.map((t) => t.name)].sort();
     expect(names).toEqual(
       [
@@ -46,6 +47,7 @@ describe("CORE_TOOLS registry", () => {
         "concept_patch",
         "concept_delete",
         "link_add",
+        "concept_supersede",
       ].sort()
     );
     // Every registry entry is Tier 0/1 — never Tier 2. This is the
@@ -54,7 +56,9 @@ describe("CORE_TOOLS registry", () => {
       expect(def.requiresDeliberation).toBe(false);
     }
     const mutators = [...CORE_TOOLS.filter((t) => t.mutates).map((t) => t.name)].sort();
-    expect(mutators).toEqual(["concept_delete", "concept_patch", "concept_write", "link_add"].sort());
+    expect(mutators).toEqual(
+      ["concept_delete", "concept_patch", "concept_write", "link_add", "concept_supersede"].sort()
+    );
   });
 
   it("getTool resolves by name and returns undefined for unknown names", () => {

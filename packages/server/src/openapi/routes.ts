@@ -36,6 +36,7 @@ export const ROUTES: readonly RouteDef[] = [
   { tool: "concept_patch", method: "patch", path: "/concepts", style: "body" },
   { tool: "concept_delete", method: "delete", path: "/concepts", style: "body" },
   { tool: "link_add", method: "post", path: "/links", style: "body", successStatus: 201 },
+  { tool: "concept_supersede", method: "post", path: "/concepts/supersede", style: "body", successStatus: 201 },
 ];
 
 export function routeFor(tools: readonly ToolDefinition[], tool: string): ToolDefinition {

@@ -6,6 +6,7 @@ export {
   conceptPatchTool,
   conceptReadTool,
   conceptSearchTool,
+  conceptSupersedeTool,
   conceptWriteTool,
   graphLintTool,
   linkAddTool,
@@ -18,6 +19,7 @@ import {
   conceptPatchTool,
   conceptReadTool,
   conceptSearchTool,
+  conceptSupersedeTool,
   conceptWriteTool,
   graphLintTool,
   linkAddTool,
@@ -39,6 +41,7 @@ export const CORE_TOOLS: readonly ToolDefinition[] = [
   conceptPatchTool,
   conceptDeleteTool,
   linkAddTool,
+  conceptSupersedeTool,
 ];
 
 /** Read-only subset — safe for any caller, any tier. */
@@ -55,6 +58,7 @@ export const WRITE_TOOL_NAMES = [
   conceptPatchTool.name,
   conceptDeleteTool.name,
   linkAddTool.name,
+  conceptSupersedeTool.name,
 ] as const;
 
 export function getTool(name: string): ToolDefinition | undefined {

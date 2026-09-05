@@ -68,7 +68,7 @@ export async function readLog(bundle: Bundle): Promise<LogEntry[]> {
       currentDate = dateMatch[1];
       continue;
     }
-    const bulletMatch = line.match(/^\*\s+\*\*(Creation|Update|Deletion)\*\*:\s*(.*)$/);
+    const bulletMatch = line.match(/^\*\s+\*\*(Creation|Update|Deletion|Supersession)\*\*:\s*(.*)$/);
     if (bulletMatch && currentDate) {
       entries.push({
         date: currentDate,

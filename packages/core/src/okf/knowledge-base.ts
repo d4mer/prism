@@ -109,6 +109,61 @@ export class KnowledgeBase {
     });
   }
 
+  /**
+   * PRISM-23: retire a belief and replace it with a new version, atomically.
+   * Writes the new concept with `supersedes` pointing at the old one, then
+   * patches `superseded_by` onto the old concept pointing at the new one —
+   * both PRISM-22 fields, both sides, enforced by the same
+   * Bundle.writeConcept validation (existence, self-reference, cycles) that
+   * concept_write/concept_patch already go through. Deliberately not built
+   * on the generic single-file afterMutation(): this mutation touches two
+   * concepts under one log entry, so it does its own bookkeeping pass
+   * instead of two separate index/log/commit passes.
+   */
+  supersede(
+    oldPath: string,
+    newPath: string,
+    newFrontmatter: ConceptFrontmatter,
+    newBody: string,
+    logSummary: string
+  ): Promise<{ old: Concept; new: Concept }> {
+    return this.enqueue(async () => {
+      // Confirms old exists (throws BundleError NOT_FOUND otherwise) and
+      // resolves it to its canonical path.
+      const oldConcept = await this.bundle.readConcept(oldPath);
+      const created = await this.bundle.writeConcept(
+        newPath,
+        { ...newFrontmatter, supersedes: oldConcept.path },
+        newBody
+      );
+      const updatedOld = await this.bundle.patchConcept(oldConcept.path, {
+        frontmatter: { superseded_by: created.path },
+      });
+
+      await pruneEmptyDirs(this.bundle);
+      const newDir = path.posix.dirname(created.path);
+      const oldDir = path.posix.dirname(updatedOld.path);
+      await regenerateIndexChain(this.bundle, newDir);
+      if (oldDir !== newDir) await regenerateIndexChain(this.bundle, oldDir);
+
+      const oldLink = `[${updatedOld.path.split("/").pop()}](${updatedOld.path})`;
+      const newLink = `[${created.path.split("/").pop()}](${created.path})`;
+      await appendLog(this.bundle, "Supersession", logSummary || `${newLink} supersedes ${oldLink}.`);
+      if (this.git) {
+        try {
+          await this.git.add(".");
+          await this.git.commit(
+            `supersession: ${logSummary || `${created.path} supersedes ${updatedOld.path}`}`
+          );
+        } catch (err) {
+          // Autocommit is best-effort; the KB write itself already succeeded.
+          console.error(`[prism] git autocommit failed: ${(err as Error).message}`);
+        }
+      }
+      return { old: updatedOld, new: created };
+    });
+  }
+
   private enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const next = this.mutationQueue.then(fn, fn);
     this.mutationQueue = next.catch(() => {});

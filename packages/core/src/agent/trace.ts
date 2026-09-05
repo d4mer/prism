@@ -96,6 +96,8 @@ export function buildNotation(
         return `delete ${shortPath(s.paths[0] ?? "")}`;
       case "link_add":
         return `link ${shortPath(s.paths[0] ?? "")}`;
+      case "concept_supersede":
+        return `supersede ${shortPath(s.paths[0] ?? "")} -> ${shortPath(s.paths[1] ?? "")}`;
       default:
         return s.tool;
     }
