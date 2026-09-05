@@ -7,6 +7,7 @@ import { searchBundle, listTypes, type SearchOptions } from "./search.js";
 import { validateBundle } from "./validate.js";
 import { lintBundle, type LintReport } from "./lint.js";
 import { buildGraph, type GraphData } from "./graph.js";
+import { queryAsOf } from "./asof.js";
 import type {
   Concept,
   ConceptFrontmatter,
@@ -68,9 +69,18 @@ export class KnowledgeBase {
     return lintBundle(this.bundle);
   }
 
-  /** Inter-concept link graph (nodes + edges) for visualization. */
-  graph(): Promise<GraphData> {
-    return buildGraph(this.bundle);
+  /**
+   * Inter-concept link graph (nodes + edges) for visualization. Excludes
+   * superseded concepts by default (PRISM-24); pass { includeHistory: true }
+   * for the full historical graph.
+   */
+  graph(options?: { includeHistory?: boolean }): Promise<GraphData> {
+    return buildGraph(this.bundle, options);
+  }
+
+  /** PRISM-24: the belief set held as of a given date — see okf/asof.ts. */
+  asOf(asOfDate: string): Promise<Concept[]> {
+    return queryAsOf(this.bundle, asOfDate);
   }
 
   // ── Mutations (serialized; auto index + log + optional commit) ──────

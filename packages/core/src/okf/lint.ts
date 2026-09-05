@@ -32,8 +32,11 @@ export interface LintReport {
 export async function lintBundle(bundle: Bundle): Promise<LintReport> {
   const { nodes, edges, brokenLinks, inbound } = await scanGraph(bundle);
 
+  // PRISM-24: a superseded concept is a valid terminal state, not
+  // something to flag for wiring in — exempt it from the orphan report
+  // even if its only inbound edge happens to be the supersession link itself.
   const orphans: LintFinding[] = nodes
-    .filter((n) => (inbound.get(n.path) ?? 0) === 0)
+    .filter((n) => !n.superseded && (inbound.get(n.path) ?? 0) === 0)
     .map((n) => ({ path: n.path, type: n.type, title: n.title }));
 
   return {

@@ -5,6 +5,8 @@ export interface SearchOptions {
   type?: string;
   tags?: string[];
   limit?: number;
+  /** PRISM-24: include superseded (historical) concepts, each marked superseded:true. Default: current beliefs only. */
+  includeHistory?: boolean;
 }
 
 /**
@@ -31,6 +33,12 @@ export async function searchBundle(
       continue; // Permissive: skip unreadable files.
     }
     const fm = concept.frontmatter;
+
+    // PRISM-24: current beliefs only by default — a superseded concept
+    // stays fully readable via concept_read, just not surfaced here unless
+    // asked for.
+    const superseded = typeof fm.superseded_by === "string" && fm.superseded_by.length > 0;
+    if (superseded && !options.includeHistory) continue;
 
     if (options.type && fm.type?.toLowerCase() !== options.type.toLowerCase()) continue;
     if (options.tags?.length) {
@@ -75,6 +83,7 @@ export async function searchBundle(
               .replace(/\s+/g, " ")
               .trim()
           : undefined,
+      superseded: superseded ? true : undefined,
       score,
     });
   }

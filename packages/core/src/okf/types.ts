@@ -41,6 +41,8 @@ export interface TreeNode {
   type?: string;
   title?: string;
   description?: string;
+  /** PRISM-24: true when this concept has a superseded_by field (a historical belief). */
+  superseded?: boolean;
   children?: TreeNode[];
 }
 
@@ -51,6 +53,8 @@ export interface SearchHit {
   description?: string;
   /** Snippet of body text around the first match, if the match was in the body. */
   snippet?: string;
+  /** PRISM-24: true when this is a superseded (historical) concept — only present when includeHistory was requested. */
+  superseded?: boolean;
   score: number;
 }
 

@@ -1,6 +1,7 @@
 export type { ToolContext, ToolDefinition } from "./types.js";
 export { conceptPathSchema, frontmatterSchema, logSummarySchema } from "./schemas.js";
 export {
+  conceptAsOfTool,
   conceptDeleteTool,
   conceptListTool,
   conceptPatchTool,
@@ -14,6 +15,7 @@ export {
 
 import type { ToolDefinition } from "./types.js";
 import {
+  conceptAsOfTool,
   conceptDeleteTool,
   conceptListTool,
   conceptPatchTool,
@@ -42,6 +44,7 @@ export const CORE_TOOLS: readonly ToolDefinition[] = [
   conceptDeleteTool,
   linkAddTool,
   conceptSupersedeTool,
+  conceptAsOfTool,
 ];
 
 /** Read-only subset — safe for any caller, any tier. */
@@ -50,6 +53,7 @@ export const READ_TOOL_NAMES = [
   conceptReadTool.name,
   conceptListTool.name,
   graphLintTool.name,
+  conceptAsOfTool.name,
 ] as const;
 
 /** Mutating subset — still zero-LLM; conformance is enforced beneath these by the OKF layer. */

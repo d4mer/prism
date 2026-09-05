@@ -253,7 +253,12 @@ export class Bundle {
             kind: "reserved",
           });
         } else {
-          let fmSummary: { type?: string; title?: string; description?: string } = {};
+          let fmSummary: {
+            type?: string;
+            title?: string;
+            description?: string;
+            superseded?: boolean;
+          } = {};
           try {
             const { frontmatter } = parseDoc(await fs.readFile(childAbs, "utf-8"));
             fmSummary = {
@@ -261,6 +266,11 @@ export class Bundle {
               title: typeof frontmatter.title === "string" ? frontmatter.title : undefined,
               description:
                 typeof frontmatter.description === "string" ? frontmatter.description : undefined,
+              // PRISM-24: lets consumers (seed overview, UI) skip historical concepts by default.
+              superseded:
+                typeof frontmatter.superseded_by === "string" && frontmatter.superseded_by.length > 0
+                  ? true
+                  : undefined,
             };
           } catch {
             // Permissive: unparseable file still appears in the tree.

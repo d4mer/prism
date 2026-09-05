@@ -34,6 +34,8 @@ export async function buildSeedMemory(kb: KnowledgeBase): Promise<string> {
           (more > 0 ? `\n    * …and ${more} more` : "")
       );
     } else if (child.kind === "concept") {
+      // PRISM-24: the session-start overview describes current beliefs only.
+      if (child.superseded) continue;
       rootDescriptions.push(child.description ?? child.title ?? child.name);
     }
   }
@@ -75,6 +77,10 @@ function collectConcepts(node: TreeNode): {
       nested.types.forEach((t) => out.types.add(t));
       out.descriptions.push(...nested.descriptions);
     } else if (child.kind === "concept") {
+      // PRISM-24: the session-start overview describes current beliefs
+      // only — a superseded concept stays reachable via concept_search
+      // (include_history) / concept_read, but doesn't clutter the seed.
+      if (child.superseded) continue;
       out.count++;
       if (child.type) out.types.add(child.type);
       out.descriptions.push(deriveConceptDescription(child));

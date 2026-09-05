@@ -12,6 +12,12 @@ const conceptSearchInput = z.object({
   type: z.string().optional().describe("Exact concept type filter"),
   tags: z.array(z.string()).optional().describe("Require ALL of these tags"),
   limit: z.number().int().positive().optional().describe("Max hits to return (default 20)"),
+  include_history: z
+    .boolean()
+    .optional()
+    .describe(
+      "PRISM-24: include superseded (historical) concepts, each marked superseded:true. Default: current beliefs only — use concept_as_of for a snapshot at a specific date instead."
+    ),
 });
 type ConceptSearchInput = z.infer<typeof conceptSearchInput>;
 interface ConceptSearchMiss {
@@ -25,12 +31,12 @@ export const conceptSearchTool: ToolDefinition<ConceptSearchInput, ConceptSearch
   name: "concept_search",
   title: "Search knowledge",
   description:
-    "Search the knowledge base by keywords, optionally filtered by concept type and/or tags, capped at 'limit' hits (default 20). Returns ranked hits with paths and snippets. NOTE: matching is keyword-based, not semantic — a miss does NOT mean the knowledge is absent; it may be worded differently.",
+    "Search the knowledge base by keywords, optionally filtered by concept type and/or tags, capped at 'limit' hits (default 20). Returns ranked hits with paths and snippets. Excludes superseded (historical) concepts by default (PRISM-24) — set include_history to include them (marked superseded:true), or use concept_as_of for a snapshot as of a specific date. NOTE: matching is keyword-based, not semantic — a miss does NOT mean the knowledge is absent; it may be worded differently.",
   inputSchema: conceptSearchInput,
   mutates: false,
   requiresDeliberation: false,
-  async handler(kb, { query, type, tags, limit }, ctx) {
-    const hits = await kb.search(query, { type, tags, limit });
+  async handler(kb, { query, type, tags, limit, include_history }, ctx) {
+    const hits = await kb.search(query, { type, tags, limit, includeHistory: include_history });
     ctx?.trace?.record("concept_search", query, hits.map((h) => h.path));
     if (hits.length > 0) return hits;
     const tree = formatTree(await kb.listTree());
@@ -356,5 +362,40 @@ export const conceptSupersedeTool: ToolDefinition<ConceptSupersedeInput, Concept
       true
     );
     return { superseded: oldConcept.path, created: newConcept.path };
+  },
+};
+
+// ── concept_as_of ────────────────────────────────────────────────────
+// PRISM-24: read-only historical snapshot. concept_search/concept_read
+// (and the seed overview, and the graph view) only ever surface CURRENT
+// beliefs by default — this is the explicit, opt-in way to ask "what did
+// we believe as of <date>" instead.
+
+const conceptAsOfInput = z.object({
+  as_of: z
+    .string()
+    .describe(
+      "ISO 8601 date or date-time. For each concept / supersession chain, returns whichever version was current at this moment (by its 'asserted' field, falling back to its write timestamp when 'asserted' is absent). A chain with nothing yet true by this date is omitted."
+    ),
+});
+type ConceptAsOfInput = z.infer<typeof conceptAsOfInput>;
+interface ConceptAsOfHit {
+  path: string;
+  frontmatter: Record<string, unknown>;
+  body: string;
+}
+
+export const conceptAsOfTool: ToolDefinition<ConceptAsOfInput, ConceptAsOfHit[]> = {
+  name: "concept_as_of",
+  title: "Query as of a date",
+  description:
+    "Return the belief set held as of a given date: for each independent concept / supersession chain, the version that was current at that moment. Use this for historical questions ('what did we believe about X on <date>') — concept_search and concept_read only ever surface the CURRENT belief.",
+  inputSchema: conceptAsOfInput,
+  mutates: false,
+  requiresDeliberation: false,
+  async handler(kb, { as_of }, ctx) {
+    const results = await kb.asOf(as_of);
+    ctx?.trace?.record("concept_as_of", as_of, results.map((c) => c.path));
+    return results.map((c) => ({ path: c.path, frontmatter: c.frontmatter, body: c.body }));
   },
 };

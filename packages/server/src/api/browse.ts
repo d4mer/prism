@@ -32,7 +32,8 @@ export function browseRouter(kb: KnowledgeBase): Router {
     const q = String(req.query.q ?? "");
     const type = req.query.type ? String(req.query.type) : undefined;
     const tag = req.query.tag ? String(req.query.tag) : undefined;
-    res.json(await kb.search(q, { type, tags: tag ? [tag] : undefined }));
+    const includeHistory = req.query.includeHistory === "true";
+    res.json(await kb.search(q, { type, tags: tag ? [tag] : undefined, includeHistory }));
   });
 
   router.get("/log", async (_req, res) => {
@@ -43,8 +44,9 @@ export function browseRouter(kb: KnowledgeBase): Router {
     res.json(await kb.validate());
   });
 
-  router.get("/graph", async (_req, res) => {
-    res.json(await kb.graph());
+  router.get("/graph", async (req, res) => {
+    const includeHistory = req.query.includeHistory === "true";
+    res.json(await kb.graph({ includeHistory }));
   });
 
   const traces = new TraceStore(kb.bundle.root);

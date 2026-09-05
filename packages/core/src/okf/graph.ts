@@ -7,6 +7,8 @@ export interface GraphNode {
   description?: string;
   /** Total degree (inbound + outbound, deduped per direction). */
   links: number;
+  /** PRISM-24: true when this concept has a superseded_by field (a historical belief). */
+  superseded?: boolean;
 }
 
 export interface GraphEdge {
@@ -46,6 +48,7 @@ export async function scanGraph(bundle: Bundle): Promise<GraphScan> {
     let type: string | undefined;
     let description: string | undefined;
     let body = "";
+    let superseded = false;
     const temporalTargets: string[] = [];
     try {
       const concept = await bundle.readConcept(p);
@@ -54,6 +57,9 @@ export async function scanGraph(bundle: Bundle): Promise<GraphScan> {
       if (typeof fm.title === "string") title = fm.title;
       if (typeof fm.type === "string") type = fm.type;
       if (typeof fm.description === "string") description = fm.description;
+      // PRISM-24: flag historical concepts so buildGraph can exclude them
+      // by default and lint can exempt them from the orphan report.
+      superseded = typeof fm.superseded_by === "string" && fm.superseded_by.length > 0;
       // PRISM-22: supersedes/superseded_by are link edges too, so a dangling
       // one (e.g. its target was later deleted, out of band) surfaces through
       // graph_lint exactly like a broken body link, not just at write time.
@@ -64,7 +70,16 @@ export async function scanGraph(bundle: Bundle): Promise<GraphScan> {
     } catch {
       // Permissive: unreadable concept still appears as a node.
     }
-    nodes.set(p, { path: p, title, type, description, links: 0, _body: body, _temporalTargets: temporalTargets });
+    nodes.set(p, {
+      path: p,
+      title,
+      type,
+      description,
+      links: 0,
+      superseded: superseded || undefined,
+      _body: body,
+      _temporalTargets: temporalTargets,
+    });
   }
 
   const edges: GraphEdge[] = [];
@@ -98,8 +113,22 @@ export async function scanGraph(bundle: Bundle): Promise<GraphScan> {
   return { nodes: [...nodes.values()], edges, brokenLinks, inbound };
 }
 
-/** Public graph shape for the API/UI (no scan internals). */
-export async function buildGraph(bundle: Bundle): Promise<GraphData> {
+export interface BuildGraphOptions {
+  /** PRISM-24: include superseded (historical) concepts and their edges. Default: current beliefs only. */
+  includeHistory?: boolean;
+}
+
+/**
+ * Public graph shape for the API/UI (no scan internals). Excludes
+ * superseded concepts by default (PRISM-24) — pass includeHistory to get
+ * the full historical graph instead.
+ */
+export async function buildGraph(bundle: Bundle, options: BuildGraphOptions = {}): Promise<GraphData> {
   const { nodes, edges } = await scanGraph(bundle);
-  return { nodes, edges };
+  if (options.includeHistory) return { nodes, edges };
+  const current = new Set(nodes.filter((n) => !n.superseded).map((n) => n.path));
+  return {
+    nodes: nodes.filter((n) => current.has(n.path)),
+    edges: edges.filter((e) => current.has(e.source) && current.has(e.target)),
+  };
 }
