@@ -47,6 +47,42 @@ export class Bundle {
     return abs;
   }
 
+  /**
+   * String-sandbox a path (traversal, absolute-path escapes — resolve()
+   * above) AND reject a symlink placed inside the bundle that would resolve
+   * outside it once followed. resolve() alone can't see this: a symlinked
+   * directory component keeps its literal name in the string, so the
+   * string-level check passes even though the OS would follow it out.
+   * Walks up to the closest existing ancestor (the target itself may not
+   * exist yet, e.g. a new concept) and realpath's that — any symlink in the
+   * existing chain gets resolved and checked. PRISM-16: every entry point
+   * that takes a caller-supplied bundle path calls this, not just resolve().
+   */
+  async resolveSafe(bundlePath: string): Promise<string> {
+    const abs = this.resolve(bundlePath);
+    let current = abs;
+    for (;;) {
+      try {
+        await fs.lstat(current);
+        break;
+      } catch {
+        const parent = path.dirname(current);
+        if (parent === current) break; // reached filesystem root without finding anything
+        current = parent;
+      }
+    }
+    let real: string;
+    try {
+      real = await fs.realpath(current);
+    } catch {
+      real = current;
+    }
+    if (real !== this.root && !real.startsWith(this.root + path.sep)) {
+      throw new BundleError(`Path escapes bundle root via symlink: ${bundlePath}`, "OUTSIDE_BUNDLE");
+    }
+    return abs;
+  }
+
   /** Normalize any input to a canonical bundle-relative path starting with "/". */
   toBundlePath(inputPath: string): string {
     const abs = this.resolve(inputPath);
@@ -77,6 +113,7 @@ export class Bundle {
   }
 
   async readConcept(bundlePath: string): Promise<Concept> {
+    await this.resolveSafe(bundlePath);
     const canonical = this.toBundlePath(bundlePath);
     const abs = this.resolve(canonical);
     let raw: string;
@@ -90,6 +127,7 @@ export class Bundle {
   }
 
   async readFileRaw(bundlePath: string): Promise<string> {
+    await this.resolveSafe(bundlePath);
     const abs = this.resolve(bundlePath);
     try {
       return await fs.readFile(abs, "utf-8");
@@ -103,6 +141,7 @@ export class Bundle {
     frontmatter: ConceptFrontmatter,
     body: string
   ): Promise<Concept> {
+    await this.resolveSafe(bundlePath);
     const canonical = this.toBundlePath(bundlePath);
     this.assertConceptPath(canonical);
     if (!hasNonEmptyType(frontmatter)) {
@@ -149,6 +188,7 @@ export class Bundle {
   }
 
   async deleteConcept(bundlePath: string): Promise<void> {
+    await this.resolveSafe(bundlePath);
     const canonical = this.toBundlePath(bundlePath);
     this.assertConceptPath(canonical);
     const abs = this.resolve(canonical);
@@ -181,6 +221,7 @@ export class Bundle {
   }
 
   async listTree(dir = "/"): Promise<TreeNode> {
+    await this.resolveSafe(dir);
     const abs = this.resolve(dir);
     const name = abs === this.root ? "/" : path.basename(abs);
     const node: TreeNode = {

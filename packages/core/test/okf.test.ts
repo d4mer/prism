@@ -76,6 +76,57 @@ describe("sandbox", () => {
     const bundle = new Bundle(root);
     expect(bundle.resolve("/a/b/c.md")).toBe(path.join(root, "a/b/c.md"));
   });
+
+  // PRISM-16: resolve()'s string check alone can't see this — a symlinked
+  // directory keeps its literal name in the path string, so it passes the
+  // string sandbox, but the OS follows it out when the file is actually
+  // opened. resolveSafe() (used by every entry point that takes a
+  // caller-supplied path) closes that gap with a realpath check.
+  describe("symlink escape (resolveSafe)", () => {
+    let outsideDir: string;
+
+    beforeEach(async () => {
+      outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "okf-outside-"));
+      await fs.writeFile(path.join(outsideDir, "secret.md"), "---\ntype: Secret\n---\nleaked", "utf-8");
+      await fs.symlink(outsideDir, path.join(root, "escape"), "dir");
+    });
+
+    afterEach(async () => {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    });
+
+    it("rejects reading through a symlink that escapes the bundle root", async () => {
+      await expect(kb.readConcept("/escape/secret.md")).rejects.toMatchObject({ code: "OUTSIDE_BUNDLE" });
+    });
+
+    it("rejects writing through a symlink that escapes the bundle root", async () => {
+      await expect(
+        kb.writeConcept("/escape/new.md", { type: "T" }, "body", "attempt")
+      ).rejects.toMatchObject({ code: "OUTSIDE_BUNDLE" });
+      // Confirm nothing was written on the other side of the symlink.
+      await expect(fs.access(path.join(outsideDir, "new.md"))).rejects.toBeTruthy();
+    });
+
+    it("rejects deleting through a symlink that escapes the bundle root", async () => {
+      await expect(kb.deleteConcept("/escape/secret.md", "attempt")).rejects.toMatchObject({ code: "OUTSIDE_BUNDLE" });
+      await expect(fs.access(path.join(outsideDir, "secret.md"))).resolves.toBeUndefined();
+    });
+
+    it("rejects patching through a symlink that escapes the bundle root", async () => {
+      await expect(
+        kb.patchConcept("/escape/secret.md", { frontmatter: { title: "pwned" } }, "attempt")
+      ).rejects.toMatchObject({ code: "OUTSIDE_BUNDLE" });
+    });
+
+    it("rejects listing a directory that escapes via symlink", async () => {
+      await expect(kb.bundle.listTree("/escape")).rejects.toMatchObject({ code: "OUTSIDE_BUNDLE" });
+    });
+
+    it("still allows normal reads elsewhere in the bundle once an escape symlink exists", async () => {
+      await kb.writeConcept("/ok.md", { type: "T" }, "body", "seed");
+      await expect(kb.readConcept("/ok.md")).resolves.toMatchObject({ path: "/ok.md" });
+    });
+  });
 });
 
 describe("index regeneration (spec §6)", () => {
