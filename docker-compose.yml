@@ -12,9 +12,10 @@ services:
     environment:
       BUNDLE_ROOT: /bundle
       AUTH_TOKEN: ${AUTH_TOKEN:-}
-      # Primary model
-      LLM_API_BASE_URL: ${LLM_API_BASE_URL}
-      LLM_API_KEY: ${LLM_API_KEY}
+      # Primary model — all optional (PRISM-14): the instance comes up
+      # healthy and fully usable for search/read/write with none of these set.
+      LLM_API_BASE_URL: ${LLM_API_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_API_FORMAT: ${LLM_API_FORMAT:-openai}
       LLM_MODEL: ${LLM_MODEL:-}
       # Fallback model
@@ -23,6 +24,12 @@ services:
       LLM_FALLBACK_API_FORMAT: ${LLM_FALLBACK_API_FORMAT:-openai}
       LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
       LLM_FALLBACK_ALLOW_FOR: ${LLM_FALLBACK_ALLOW_FOR:-query}
+      # Embeddings (PRISM-37, optional) — turns on hybrid semantic+keyword
+      # search. Add these later without rebuilding the image; keyword search
+      # works fully without them.
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       # Legacy compat (still supported)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

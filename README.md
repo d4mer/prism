@@ -19,41 +19,28 @@ Bundles follow the [Open Knowledge Format (OKF) v0.1 spec](https://github.com/Go
 
 ## Quick start (Docker)
 
-No clone needed — the image is public. Save this as `docker-compose.yml`:
-
-```yaml
-services:
-  prism:
-    image: ghcr.io/thecodacus/understory:latest
-    ports:
-      - "3800:3800"
-    # Lets the container reach a llama.cpp server running on the host via
-    # http://host.docker.internal:8080/v1 (see "Local llama.cpp" below).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      # Your memory lives here as plain markdown — a named volume, or point
-      # a bind mount (e.g. ./my-memory:/bundle) at any OKF bundle.
-      - prism-memory:/bundle
-    environment:
-      BUNDLE_ROOT: /bundle
-      LLM_API_BASE_URL: ${LLM_API_BASE_URL}
-      LLM_API_KEY: ${LLM_API_KEY}
-      LLM_API_FORMAT: openai
-      LLM_MODEL: ${LLM_MODEL:-}
-      # Optional fallback
-      LLM_FALLBACK_API_BASE_URL: ${LLM_FALLBACK_API_BASE_URL:-}
-      LLM_FALLBACK_API_KEY: ${LLM_FALLBACK_API_KEY:-}
-      LLM_FALLBACK_API_FORMAT: ${LLM_FALLBACK_API_FORMAT:-openai}
-      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-}
-    restart: unless-stopped
-
-volumes:
-  prism-memory:
-```
+**Prerequisites: Docker only** — no Node, no pnpm, nothing else installed on your machine. Docker itself does the build.
 
 ```bash
-docker compose up -d
+git clone https://github.com/d4mer/prism.git
+cd prism
+docker compose up --build -d
+```
+
+That single command builds the image from source (the multi-stage [Dockerfile](Dockerfile) — pnpm install/build happens inside the container) and starts it with no required environment variables: every `LLM_*` and `EMBEDDING_*` var in [docker-compose.yml](docker-compose.yml) defaults to empty, and the instance comes up fully usable — search, read, write, the web UI, the graph view — with zero external API keys configured (LLM/embeddings only add the agent-chat and semantic-search layers on top). `docker compose ps` reports it `healthy` once `/` answers (see the Dockerfile's `HEALTHCHECK`).
+
+Then open **http://localhost:3800**.
+
+**Where your data lives**: the default compose file mounts `./sample-bundle` from the repo into the container at `/bundle` — edit that path in `docker-compose.yml` to point at your own folder (or swap it for a named volume, as `docker-compose.portainer.yml` does) before you start filing real knowledge into it. Whatever you land on, that host path/volume is the actual knowledge base — markdown files, readable and diffable outside Docker entirely.
+
+**Restarting or upgrading**: `docker compose restart` restarts in place. To upgrade to a newer version of Prism itself: `git pull && docker compose up --build -d` (rebuilds from source) for this file, or `docker compose pull && docker compose up -d` (pulls a newer image) for the prebuilt image below — either way the bundle in your mounted volume is untouched.
+
+**Add a model later, no rebuild**: set `LLM_API_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL` (chat) and/or `EMBEDDING_API_BASE_URL`/`EMBEDDING_MODEL` (semantic search) as environment variables — a `.env` file next to `docker-compose.yml` is picked up automatically — then `docker compose up -d` again. Same image, no rebuild needed, since these are read at container start, not build time.
+
+No clone needed once a release exists: `docker-compose.portainer.yml` pulls the prebuilt `ghcr.io/d4mer/prism:latest` image instead of building locally (published by [.github/workflows/docker.yml](.github/workflows/docker.yml) on every push to `main` and on version tags) — same environment variables, a named volume instead of a bind mount. Point Portainer's Stacks → Add stack → Repository at it, or run it directly:
+
+```bash
+docker compose -f docker-compose.portainer.yml up -d
 ```
 
 ### Choosing a provider
@@ -108,7 +95,7 @@ Then:
   ```
 - Your agent now has `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain`, and gets a seed overview of the memory at every session start.
 
-Teach it something (`memory_add`: "We deploy on Fridays, never Mondays"), then open the graph and watch the concept wire itself in. Deploying with Portainer? Use [docker-compose.portainer.yml](docker-compose.portainer.yml) as a repository stack.
+Teach it something (`memory_add`: "We deploy on Fridays, never Mondays"), then open the graph and watch the concept wire itself in.
 
 ## Stack
 
