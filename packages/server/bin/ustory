@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+// Deprecated alias for the "prism" binary, kept for one release after the
+// understory -> Prism rename (PRISM-44) so existing scripts/configs that
+// invoke "ustory" don't break outright. Prefer "prism" going forward; this
+// alias will be removed in a future release.
+console.error("[prism] ⚠ \"ustory\" is deprecated and will be removed in a future release — use \"prism\" instead.");
+import("../dist/mcp/stdio.js");
