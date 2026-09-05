@@ -162,7 +162,7 @@ export async function runDream(
   const normalized = normalizeMutation(result);
   let usage: TraceUsage | undefined;
   if (normalized.traceId) {
-    const trace = await new TraceStore(kb.bundle.root).get(normalized.traceId);
+    const trace = await new TraceStore(kb.bundle.root).read(normalized.traceId);
     usage = trace?.usage;
   }
   return {

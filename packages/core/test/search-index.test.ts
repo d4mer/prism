@@ -242,6 +242,27 @@ describe("PRISM-35: derived SQLite search index", () => {
     expect(scanned[0]?.type).toBe("unknown");
   });
 
+  it("multi-word tags filter identically to the legacy scan (regression: tags_joined must not be re-split for exact filtering)", async () => {
+    await kb.writeConcept(
+      "/rota/oncall.md",
+      { type: "Rota", title: "On-call rota", description: "Who is on call", tags: ["on call"] },
+      "Primary on-call rotation.",
+      "Added rota."
+    );
+    await kb.writeConcept(
+      "/rota/decoy.md",
+      { type: "Rota", title: "Decoy", description: "Not on call", tags: ["call"] },
+      "A concept tagged only 'call', not the multi-word tag.",
+      "Added decoy."
+    );
+    await kb.rebuildSearchIndex();
+
+    const scanned = await searchBundle(kb.bundle, "", { tags: ["on call"] });
+    const indexed = await tryIndexedSearch(kb.bundle, "", { tags: ["on call"] });
+    expect(indexed).toEqual(scanned);
+    expect(scanned.map((h) => h.path)).toEqual(["/rota/oncall.md"]);
+  });
+
   it("the index file itself is invisible to bundle walking (dot-directory convention)", async () => {
     await seedBundle();
     await kb.rebuildSearchIndex();

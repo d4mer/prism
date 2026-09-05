@@ -365,8 +365,17 @@ export function searchIndexed(db: DatabaseSync, query: string, options: SearchOp
   for (const row of rows) {
     if (row.superseded && !options.includeHistory) continue;
     if (options.type && row.type.toLowerCase() !== options.type.toLowerCase()) continue;
+
+    // Tag filtering needs the concept's real tag array, not tags_joined —
+    // that column is a space-joined flattening kept for scoring/FTS only,
+    // and can't tell a multi-word tag ("on call") apart from two separate
+    // tags (["on", "call"]) once re-split. Parse frontmatter_json lazily,
+    // only when a tags filter is actually requested, to match searchBundle()
+    // exactly without paying JSON.parse cost on every row of every search.
+    let fm: ConceptFrontmatter | undefined;
     if (options.tags?.length) {
-      const conceptTags = row.tags_joined.toLowerCase().split(" ").filter(Boolean);
+      fm = JSON.parse(row.frontmatter_json) as ConceptFrontmatter;
+      const conceptTags = (Array.isArray(fm.tags) ? fm.tags : []).map((t) => String(t).toLowerCase());
       if (!options.tags.every((t) => conceptTags.includes(t.toLowerCase()))) continue;
     }
 
@@ -392,7 +401,7 @@ export function searchIndexed(db: DatabaseSync, query: string, options: SearchOp
     if (terms.length === 0) score = 1;
     if (score === 0) continue;
 
-    const fm = JSON.parse(row.frontmatter_json) as ConceptFrontmatter;
+    fm ??= JSON.parse(row.frontmatter_json) as ConceptFrontmatter;
     hits.push({
       path: row.path,
       // Match searchBundle()'s display default exactly (row.type is "" for
