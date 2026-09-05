@@ -5,7 +5,14 @@ import path from "node:path";
 import { Bundle } from "../src/okf/bundle.js";
 import { KnowledgeBase } from "../src/okf/index.js";
 import { searchBundle, type SearchOptions } from "../src/okf/search.js";
-import { rebuildSearchIndex, tryIndexedSearch, indexExists, indexPath } from "../src/okf/search-index.js";
+import {
+  rebuildSearchIndex,
+  tryIndexedSearch,
+  indexExists,
+  indexPath,
+  ensureSchema,
+} from "../src/okf/search-index.js";
+import { DatabaseSync } from "node:sqlite";
 
 let root: string;
 let kb: KnowledgeBase;
@@ -261,6 +268,43 @@ describe("PRISM-35: derived SQLite search index", () => {
     const indexed = await tryIndexedSearch(kb.bundle, "", { tags: ["on call"] });
     expect(indexed).toEqual(scanned);
     expect(scanned.map((h) => h.path)).toEqual(["/rota/oncall.md"]);
+  });
+
+  it("ensureSchema upgrades a pre-PRISM-37 index in place via ALTER TABLE, not a rebuild", () => {
+    const db = new DatabaseSync(":memory:");
+    // The schema as it existed before PRISM-37 added embedding columns.
+    db.exec(`
+      CREATE TABLE concepts (
+        path TEXT PRIMARY KEY,
+        type TEXT,
+        title TEXT,
+        description TEXT,
+        tags_joined TEXT NOT NULL DEFAULT '',
+        body TEXT NOT NULL DEFAULT '',
+        superseded INTEGER NOT NULL DEFAULT 0,
+        content_hash TEXT NOT NULL,
+        frontmatter_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      `INSERT INTO concepts (path, content_hash, frontmatter_json, updated_at) VALUES ('/a.md', 'h1', '{}', 'now')`
+    ).run();
+
+    ensureSchema(db); // must not throw, must not touch existing data
+
+    const cols = (db.prepare("PRAGMA table_info(concepts)").all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toEqual(expect.arrayContaining(["embedding", "embedding_hash", "embedding_model"]));
+
+    const row = db.prepare("SELECT * FROM concepts WHERE path = '/a.md'").get() as Record<string, unknown>;
+    expect(row.content_hash).toBe("h1"); // pre-existing data survives the upgrade
+    expect(row.embedding).toBeNull();
+
+    // Idempotent: calling it again on an already-upgraded schema must also
+    // not throw (the "duplicate column" catch path).
+    expect(() => ensureSchema(db)).not.toThrow();
+
+    db.close();
   });
 
   it("the index file itself is invisible to bundle walking (dot-directory convention)", async () => {

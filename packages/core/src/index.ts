@@ -4,6 +4,8 @@ export * from "./agent/query-cache.js";
 export * from "./agent/hot-memory.js";
 export * from "./agent/dream.js";
 export * from "./agent/maintain-cli.js";
+export * from "./okf/embeddings.js";
+export * from "./providers/embeddings.js";
 export * from "./providers/index.js";
 export * from "./registry/index.js";
 export * from "./util/duration.js";

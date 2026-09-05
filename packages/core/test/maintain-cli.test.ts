@@ -4,7 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { KnowledgeBase } from "../src/okf/index.js";
 import { runDream } from "../src/agent/dream.js";
-import { parseMaintainArgs, runMaintainCli, exitCodeFor, USAGE } from "../src/agent/maintain-cli.js";
+import {
+  parseMaintainArgs,
+  runMaintainCli,
+  exitCodeFor,
+  embeddingsExitCodeFor,
+  USAGE,
+} from "../src/agent/maintain-cli.js";
 
 let root: string;
 let kb: KnowledgeBase;
@@ -82,8 +88,12 @@ describe("runMaintainCli", () => {
     const { exitCode, output } = await runMaintainCli([root]);
     expect(exitCode).toBe(0);
     const report = JSON.parse(output);
-    expect(report.ran).toBe(false);
-    expect(report.reason).toMatch(/healthy/);
+    expect(report.dream.ran).toBe(false);
+    expect(report.dream.reason).toMatch(/healthy/);
+    // PRISM-37: "embed" is selected by default alongside repair/consolidate,
+    // but with no EMBEDDING_* env set it's an opt-in feature sitting idle —
+    // not a failure, and it must not affect the exit code above.
+    expect(report.embeddings.configured).toBe(false);
   });
 
   it("fails loudly (exit 2) on a missing bundle path rather than reporting a false no-op", async () => {
@@ -105,9 +115,20 @@ describe("runMaintainCli", () => {
 
     const { exitCode, output } = await runMaintainCli([root, "--dry-run"]);
     const report = JSON.parse(output);
-    expect(report.dryRun).toBe(true);
-    expect(report.signalCategories).toContain("orphans");
+    expect(report.dream.dryRun).toBe(true);
+    expect(report.dream.signalCategories).toContain("orphans");
     expect(exitCode).toBe(1);
+  });
+
+  it("--only=embed with no EMBEDDING_* config is a no-op (exit 0) and omits the dream report entirely", async () => {
+    await kb.writeConcept("/hub.md", { type: "T", title: "Hub", description: "main" }, "core", "add");
+    await kb.writeConcept("/stray.md", { type: "T", title: "Stray", description: "unconnected" }, "alone", "add");
+
+    const { exitCode, output } = await runMaintainCli([root, "--only=embed"]);
+    const report = JSON.parse(output);
+    expect(exitCode).toBe(0);
+    expect(report.dream).toBeUndefined();
+    expect(report.embeddings.configured).toBe(false);
   });
 
   it("AC3: dry-run output matches what a real run subsequently does", async () => {
@@ -223,5 +244,43 @@ describe("exitCodeFor", () => {
 
   it("a failed real run exits 2", () => {
     expect(exitCodeFor({ ...base, ran: true, succeeded: false, passes: [...base.passes] })).toBe(2);
+  });
+});
+
+describe("embeddingsExitCodeFor", () => {
+  const base = { total: 10, stale: 0, embedded: 0, failed: 0, failedPaths: [] as string[] };
+
+  it("not configured exits 0 — an opt-in feature sitting idle isn't a failure", () => {
+    expect(embeddingsExitCodeFor({ ...base, configured: false, ran: false })).toBe(0);
+  });
+
+  it("up to date (ran=false, no staleness) exits 0", () => {
+    expect(embeddingsExitCodeFor({ ...base, configured: true, ran: false })).toBe(0);
+  });
+
+  it("a dry-run with nothing stale exits 0", () => {
+    expect(embeddingsExitCodeFor({ ...base, configured: true, ran: false, dryRun: true, stale: 0 })).toBe(0);
+  });
+
+  it("a dry-run with staleness exits 1 (embeddings WOULD be generated)", () => {
+    expect(embeddingsExitCodeFor({ ...base, configured: true, ran: false, dryRun: true, stale: 3 })).toBe(1);
+  });
+
+  it("a successful real run exits 1 (embeddings generated)", () => {
+    expect(embeddingsExitCodeFor({ ...base, configured: true, ran: true, stale: 3, embedded: 3 })).toBe(1);
+  });
+
+  it("any failed embedding exits 2, even if some succeeded (never silently partial)", () => {
+    expect(
+      embeddingsExitCodeFor({
+        ...base,
+        configured: true,
+        ran: true,
+        stale: 3,
+        embedded: 2,
+        failed: 1,
+        failedPaths: ["/x.md"],
+      })
+    ).toBe(2);
   });
 });

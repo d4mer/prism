@@ -242,13 +242,30 @@ Memory is a graph, not a pile of notes, and graphs rot: concepts go **orphaned**
 - **Write-time linking** — new knowledge either enriches the concept it belongs to (an attribute of an existing entity is patched in, not filed separately) or, when it's a distinct entity, is created *and* back-linked from related concepts. Contradictions are superseded in place, never left standing alongside the old value.
 - **`memory_maintain`** — a deterministic lint (orphans + broken links, surfaced in `memory_status` under `graph`) drives an internal agent to wire orphans into related concepts and fix dangling links. Run it periodically to counter drift; it's a no-op when the graph is already healthy.
 
-This design mirrors the pattern in Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (index.md + log.md, create-vs-enrich, lint for orphans). Deferred from that pattern until scale warrants: an explicit page-type schema, and hybrid FTS5+embedding search (the naive scan in `search.ts` is fine into the low thousands of concepts).
+This design mirrors the pattern in Karpathy's [LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) (index.md + log.md, create-vs-enrich, lint for orphans). Deferred from that pattern until scale warrants: an explicit page-type schema. Search itself now has both halves the original note called out — a derived index and optional hybrid embedding ranking — described next.
+
+### `prism maintain` (cron-drivable, no server required)
+
+`prism maintain <bundle-path>` runs the same graph-repair/consolidation logic as `memory_maintain` plus embedding generation, as a one-shot process any external scheduler can drive — no running server, no LLM required unless a repair/consolidation signal actually fires:
+
+```bash
+prism maintain ./my-bundle --dry-run              # preview only, changes nothing
+prism maintain ./my-bundle                        # repair + consolidate + embed (default: all three)
+prism maintain ./my-bundle --only=embed            # embeddings only
+prism maintain ./my-bundle --only=repair,consolidate
+```
+
+Exit codes mirror `diff`: `0` no-op (healthy, or nothing stale), `1` changes made (or, for `--dry-run`, changes *would* be made), `2` failure. Output is JSON: `{ dream, embeddings }`, either key present only if its passes were selected.
+
+### Semantic search (optional)
+
+Keyword search (the derived SQLite+FTS index, or the plain scan as a fallback) is the default and requires no configuration. Setting `EMBEDDING_API_BASE_URL` + `EMBEDDING_MODEL` (any OpenAI-compatible `/embeddings` endpoint — OpenAI, Voyage, etc.) turns on hybrid ranking: a query can then surface concepts that share **no literal keywords** with it, the common case for client-specific jargon vs. standard terminology meaning the same thing. Embeddings are generated only by `prism maintain` (never on a search request), are content-hash-gated so an unchanged concept is never re-embedded, and are reported (`embedded` / `failed` / `coverage`) rather than silently assumed — a batch failure shows up in the `prism maintain` output instead of quietly degrading search quality. Leave `EMBEDDING_API_BASE_URL` unset and everything works exactly as it did before — hybrid ranking is strictly additive on top of keyword search, never a replacement for it.
 
 ## Tests
 
 ```bash
 pnpm install                               # first run on a mounted/FUSE filesystem? see .npmrc — package-import-method=copy avoids an EPERM on install there
-pnpm test                                  # core (91 tests) + server (28 tests): spec, registry, sandbox (incl. symlink escapes), search, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
+pnpm test                                  # core (163 tests) + server (28 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
 
 # Manual/exploratory checks — no LLM required for either of these:
 pnpm --filter @prism/server exec tsx scripts/registry-smoke.mts   # CORE_TOOLS registry CRUD round-trip against a throwaway bundle copy

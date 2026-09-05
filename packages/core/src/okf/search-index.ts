@@ -3,9 +3,28 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { parseDoc } from "./frontmatter.js";
+import { cosineSimilarity } from "ai";
 import type { Bundle } from "./bundle.js";
 import type { Concept, ConceptFrontmatter, SearchHit } from "./types.js";
 import type { SearchOptions } from "./search.js";
+import { resolveEmbeddingConfig, embedQuery } from "../providers/embeddings.js";
+
+/**
+ * PRISM-37: additive weight given to a semantic (embedding) match, on the
+ * same scale as the keyword scoring below (title +10, path +6,
+ * description/tags +5, body +2). Tunable: raise to let a strong semantic
+ * match outrank a weak keyword match more often; lower to make embeddings
+ * a tie-breaker only. Exported so okf/embeddings.ts's maintenance pass and
+ * this module's own tests share one definition instead of two.
+ */
+export const SEMANTIC_WEIGHT = 20;
+
+/**
+ * Cosine similarities below this are treated as "not a match" (contribute
+ * zero score) rather than a weak positive — keeps unrelated concepts out of
+ * results when nothing meaningfully relates to the query.
+ */
+export const SEMANTIC_MIN_SIMILARITY = 0.2;
 
 const INDEX_DIRNAME = ".prism";
 const INDEX_FILENAME = "search.sqlite3";
@@ -58,7 +77,7 @@ function tagsJoined(fm: ConceptFrontmatter): string {
   return (Array.isArray(fm.tags) ? fm.tags : []).map(String).join(" ");
 }
 
-function ensureSchema(db: DatabaseSync): void {
+export function ensureSchema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS concepts (
       path TEXT PRIMARY KEY,
@@ -70,7 +89,10 @@ function ensureSchema(db: DatabaseSync): void {
       superseded INTEGER NOT NULL DEFAULT 0,
       content_hash TEXT NOT NULL,
       frontmatter_json TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      embedding TEXT,
+      embedding_hash TEXT,
+      embedding_model TEXT
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS concepts_fts USING fts5(
@@ -95,6 +117,21 @@ function ensureSchema(db: DatabaseSync): void {
       value TEXT NOT NULL
     );
   `);
+
+  // PRISM-37: upgrade an index built before embeddings existed. node:sqlite's
+  // bundled SQLite doesn't support "ADD COLUMN IF NOT EXISTS" (verified: it's
+  // a syntax error there), so we just try the plain form and swallow the
+  // "duplicate column" error on a table that already has it — cheap, and
+  // ensureSchema already runs on every db-open.
+  for (const col of ["embedding TEXT", "embedding_hash TEXT", "embedding_model TEXT"]) {
+    try {
+      db.exec(`ALTER TABLE concepts ADD COLUMN ${col}`);
+    } catch {
+      // Column already exists (the common case) — nothing to do. Any other
+      // ALTER failure would also surface on the CREATE TABLE above or the
+      // first real query, so it's safe to ignore here specifically.
+    }
+  }
 }
 
 /** Open the index for writing (rebuild/incremental maintenance). Creates the file/schema if absent. */
@@ -344,7 +381,18 @@ async function ensureBundleGitignore(bundle: Bundle): Promise<void> {
  * scan implementation — this is what makes the index provably safe to swap
  * in: same inputs, same outputs, just faster.
  */
-export function searchIndexed(db: DatabaseSync, query: string, options: SearchOptions = {}): SearchHit[] {
+export function searchIndexed(
+  db: DatabaseSync,
+  query: string,
+  options: SearchOptions = {},
+  // PRISM-37: the query's own embedding, precomputed by tryIndexedSearch
+  // (the one call in this feature that has to happen on the request path —
+  // see providers/embeddings.ts). Undefined whenever embeddings aren't
+  // configured, aren't available for this row, or the provider call failed;
+  // every one of those cases must reproduce keyword-only scoring exactly,
+  // which is what makes this optional rather than a rewrite.
+  queryEmbedding?: number[]
+): SearchHit[] {
   const terms = query
     .toLowerCase()
     .split(/\s+/)
@@ -358,7 +406,10 @@ export function searchIndexed(db: DatabaseSync, query: string, options: SearchOp
     tags_joined: string;
     body: string;
     superseded: number;
+    content_hash: string;
     frontmatter_json: string;
+    embedding: string | null;
+    embedding_hash: string | null;
   }>;
 
   const hits: SearchHit[] = [];
@@ -399,7 +450,24 @@ export function searchIndexed(db: DatabaseSync, query: string, options: SearchOp
       }
     }
     if (terms.length === 0) score = 1;
-    if (score === 0) continue;
+
+    // PRISM-37: hybrid ranking. A row with zero keyword overlap but a
+    // strong semantic match must still surface (the "vocabulary mismatch"
+    // case — client jargon vs. SAP-standard terms sharing no keywords) —
+    // so this is added AFTER the keyword score, not folded into the
+    // score===0 check above. When queryEmbedding is undefined (embeddings
+    // not configured, or the live query-embed call failed) or this row has
+    // no valid embedding of its own, semanticScore stays exactly 0 and the
+    // total is identical to the pre-PRISM-37 keyword-only score — this is
+    // what keeps "embeddings disabled ⇒ behaves exactly like the scan" true
+    // by construction rather than by a separate code path.
+    let semanticScore = 0;
+    if (queryEmbedding && row.embedding && row.embedding_hash === row.content_hash) {
+      const similarity = cosineSimilarity(queryEmbedding, JSON.parse(row.embedding) as number[]);
+      if (similarity >= SEMANTIC_MIN_SIMILARITY) semanticScore = similarity * SEMANTIC_WEIGHT;
+    }
+    const total = score + semanticScore;
+    if (total === 0) continue;
 
     fm ??= JSON.parse(row.frontmatter_json) as ConceptFrontmatter;
     hits.push({
@@ -417,7 +485,7 @@ export function searchIndexed(db: DatabaseSync, query: string, options: SearchOp
               .trim()
           : undefined,
       superseded: row.superseded ? true : undefined,
-      score,
+      score: total,
     });
   }
 
@@ -438,7 +506,24 @@ export async function tryIndexedSearch(
   let db: DatabaseSync | undefined;
   try {
     db = new DatabaseSync(indexPath(bundle), { readOnly: true });
-    return searchIndexed(db, query, options);
+
+    // PRISM-37: the one embedding call on the search request path — the
+    // query's own vector, needed to compare against concepts' precomputed
+    // ones. Deliberately isolated from the DB-level catch below: a slow or
+    // broken embeddings provider must degrade this one search to
+    // keyword-only, never take down indexed search entirely (an empty
+    // query has nothing meaningful to embed, so it's skipped outright).
+    let queryEmbedding: number[] | undefined;
+    const embeddingConfig = query.trim().length > 0 ? resolveEmbeddingConfig() : undefined;
+    if (embeddingConfig) {
+      try {
+        queryEmbedding = await embedQuery(embeddingConfig, query);
+      } catch (err) {
+        console.error(`[prism] query embedding failed, falling back to keyword-only: ${(err as Error).message}`);
+      }
+    }
+
+    return searchIndexed(db, query, options, queryEmbedding);
   } catch {
     // Corrupt/incompatible index file, or a DB-level error — never fail the
     // caller's search over this; they fall back to the direct scan instead.
