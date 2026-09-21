@@ -7,6 +7,7 @@ import { searchBundle, listTypes, type SearchOptions } from "./search.js";
 import { validateBundle } from "./validate.js";
 import { lintBundle, type LintReport } from "./lint.js";
 import { buildGraph, type GraphData } from "./graph.js";
+import { findRelated, type RelatedHit, type RelatedOptions } from "./related.js";
 import { queryAsOf } from "./asof.js";
 import {
   rebuildSearchIndex as rebuildSearchIndexFile,
@@ -91,6 +92,18 @@ export class KnowledgeBase {
   /** PRISM-24: the belief set held as of a given date — see okf/asof.ts. */
   asOf(asOfDate: string): Promise<Concept[]> {
     return queryAsOf(this.bundle, asOfDate);
+  }
+
+  /**
+   * PRISM-47: concepts reachable from `path` via existing link edges,
+   * each tagged with its hop distance (default 1 hop). Current-belief-aware
+   * by default (PRISM-24), same as search()/graph(). Throws BundleError
+   * NOT_FOUND if `path` doesn't exist — the one existence check this
+   * feature needs, done once here rather than inside the pure graph walk.
+   */
+  async related(path: string, options?: RelatedOptions): Promise<RelatedHit[]> {
+    const concept = await this.bundle.readConcept(path);
+    return findRelated(this.bundle, concept.path, options);
   }
 
   /**

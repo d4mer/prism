@@ -6,6 +6,7 @@ export {
   conceptListTool,
   conceptPatchTool,
   conceptReadTool,
+  conceptRelatedTool,
   conceptSearchTool,
   conceptSupersedeTool,
   conceptWriteTool,
@@ -20,6 +21,7 @@ import {
   conceptListTool,
   conceptPatchTool,
   conceptReadTool,
+  conceptRelatedTool,
   conceptSearchTool,
   conceptSupersedeTool,
   conceptWriteTool,
@@ -39,6 +41,7 @@ export const CORE_TOOLS: readonly ToolDefinition[] = [
   conceptReadTool,
   conceptListTool,
   graphLintTool,
+  conceptRelatedTool,
   conceptWriteTool,
   conceptPatchTool,
   conceptDeleteTool,
@@ -53,6 +56,7 @@ export const READ_TOOL_NAMES = [
   conceptReadTool.name,
   conceptListTool.name,
   graphLintTool.name,
+  conceptRelatedTool.name,
   conceptAsOfTool.name,
 ] as const;
 

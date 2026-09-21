@@ -15,6 +15,7 @@ import {
   conceptListTool,
   conceptPatchTool,
   conceptReadTool,
+  conceptRelatedTool,
   conceptSearchTool,
   conceptSupersedeTool,
   conceptWriteTool,
@@ -36,7 +37,7 @@ afterEach(async () => {
 });
 
 describe("CORE_TOOLS registry", () => {
-  it("lists exactly the ten deterministic operations, correctly classified", () => {
+  it("lists exactly the eleven deterministic operations, correctly classified", () => {
     const names = [...CORE_TOOLS.map((t) => t.name)].sort();
     expect(names).toEqual(
       [
@@ -44,6 +45,7 @@ describe("CORE_TOOLS registry", () => {
         "concept_read",
         "concept_list",
         "graph_lint",
+        "concept_related",
         "concept_write",
         "concept_patch",
         "concept_delete",
@@ -303,6 +305,30 @@ describe("link_add", () => {
   });
 });
 
+describe("concept_related", () => {
+  it("returns direct neighbors at hop 1, tagged with distance, via the handler (round-trip through the registry, not okf directly)", async () => {
+    await conceptWriteTool.handler(kb, {
+      path: "/a.md",
+      frontmatter: { type: "T", title: "A" },
+      body: "[B](/b.md)",
+      log_summary: "seed",
+    });
+    await conceptWriteTool.handler(kb, {
+      path: "/b.md",
+      frontmatter: { type: "T", title: "B" },
+      body: "body",
+      log_summary: "seed",
+    });
+
+    const hits = await conceptRelatedTool.handler(kb, { path: "/a.md" });
+    expect(hits).toEqual([{ path: "/b.md", distance: 1, title: "B", type: "T", superseded: undefined }]);
+  });
+
+  it("rejects an unknown starting concept the same way concept_read does", async () => {
+    await expect(conceptRelatedTool.handler(kb, { path: "/does-not-exist.md" })).rejects.toThrow(/not found/i);
+  });
+});
+
 describe("granular registry operations make zero provider requests (PRISM-15)", () => {
   it("issues no network requests across a full write/read/search/list/patch/link/lint/delete round trip", async () => {
     const fetchSpy = vi.fn(() => {
@@ -331,6 +357,7 @@ describe("granular registry operations make zero provider requests (PRISM-15)", 
         log_summary: "patch",
       });
       await linkAddTool.handler(kb, { source: "/a.md", target: "/b.md", log_summary: "link" });
+      await conceptRelatedTool.handler(kb, { path: "/a.md" });
       await graphLintTool.handler(kb, {});
       await conceptDeleteTool.handler(kb, { path: "/b.md", log_summary: "cleanup" });
 

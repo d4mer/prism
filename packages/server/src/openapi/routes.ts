@@ -32,6 +32,7 @@ export const ROUTES: readonly RouteDef[] = [
   { tool: "concept_search", method: "get", path: "/concepts/search", style: "query" },
   { tool: "concept_read", method: "get", path: "/concepts/one", style: "query" },
   { tool: "graph_lint", method: "get", path: "/graph/lint", style: "query" },
+  { tool: "concept_related", method: "get", path: "/concepts/related", style: "query" },
   { tool: "concept_write", method: "post", path: "/concepts", style: "body", successStatus: 201 },
   { tool: "concept_patch", method: "patch", path: "/concepts", style: "body" },
   { tool: "concept_delete", method: "delete", path: "/concepts", style: "body" },

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { recordHotDelete, recordHotWrite } from "../agent/hot-memory.js";
-import { replaceSection, type LintReport, type SearchHit } from "../okf/index.js";
+import { replaceSection, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
 import { formatTree } from "./format-tree.js";
 import { conceptPathSchema, frontmatterSchema, logSummarySchema } from "./schemas.js";
 import type { ToolDefinition } from "./types.js";
@@ -113,6 +113,44 @@ export const graphLintTool: ToolDefinition<GraphLintInput, LintReport> = {
   async handler(kb, _input, ctx) {
     ctx?.trace?.record("graph_lint", "", []);
     return kb.lint();
+  },
+};
+
+// ── concept_related ──────────────────────────────────────────────────
+// PRISM-47: "what else touches this" directly from the link graph, no
+// fresh keyword/semantic query required. Reuses okf/graph.ts's traversal
+// (via KnowledgeBase.related) rather than a new implementation, and is
+// current-belief-aware by default, consistent with concept_search/graph.
+
+const conceptRelatedInput = z.object({
+  path: conceptPathSchema.describe("Starting concept"),
+  hops: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Max hops from the starting concept to traverse (default 1)"),
+  include_history: z
+    .boolean()
+    .optional()
+    .describe(
+      "PRISM-24: include superseded (historical) concepts and the edges through them, each marked superseded:true. Default: current beliefs only, consistent with concept_search/graph."
+    ),
+});
+type ConceptRelatedInput = z.infer<typeof conceptRelatedInput>;
+
+export const conceptRelatedTool: ToolDefinition<ConceptRelatedInput, RelatedHit[]> = {
+  name: "concept_related",
+  title: "Related concepts",
+  description:
+    "Concepts reachable from 'path' via existing link edges (body links, supersedes/superseded_by) — the link graph itself, not a fresh search. Each hit is tagged with its hop distance from the origin; a 1-hop query (the default) returns exactly its direct links, a 2-hop query also returns their links, deduplicated, without re-including the origin. Excludes superseded (historical) concepts by default (PRISM-24) — set include_history to include them, consistent with concept_search/graph. Use this instead of concept_search when you already have a concept and want what connects to it, not a fresh keyword/semantic query.",
+  inputSchema: conceptRelatedInput,
+  mutates: false,
+  requiresDeliberation: false,
+  async handler(kb, { path, hops, include_history }, ctx) {
+    const hits = await kb.related(path, { hops, includeHistory: include_history });
+    ctx?.trace?.record("concept_related", path, hits.map((h) => h.path));
+    return hits;
   },
 };
 
