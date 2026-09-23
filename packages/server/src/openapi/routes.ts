@@ -42,6 +42,7 @@ export const ROUTES: readonly RouteDef[] = [
   { tool: "concept_capture", method: "post", path: "/concepts/capture", style: "body", successStatus: 201 },
   { tool: "changes_since", method: "get", path: "/changes", style: "query" },
   { tool: "open_items", method: "get", path: "/items/open", style: "query" },
+  { tool: "concept_template", method: "get", path: "/templates", style: "query" },
 ];
 
 export function routeFor(tools: readonly ToolDefinition[], tool: string): ToolDefinition {

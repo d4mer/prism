@@ -9,7 +9,7 @@ Bundles follow the [Open Knowledge Format (OKF) v0.1 spec](https://github.com/Go
 **Three ways in, one agent — and a granular tool surface that needs no agent at all:**
 
 - **MCP server** — two tiers of tools over stdio or streamable HTTP, no LLM required to start the server or use the first tier:
-  - **Granular (zero LLM, ever):** `concept_search` / `concept_read` / `concept_list` / `graph_lint` / `concept_related` / `concept_write` / `concept_patch` / `concept_delete` / `link_add` / `concept_supersede` / `concept_as_of` / `concept_capture` / `changes_since` / `open_items`. A capable calling agent files knowledge itself, one round trip per action — no server-side model involved at any point.
+  - **Granular (zero LLM, ever):** `concept_search` / `concept_read` / `concept_list` / `graph_lint` / `concept_related` / `concept_write` / `concept_patch` / `concept_delete` / `link_add` / `concept_supersede` / `concept_as_of` / `concept_capture` / `changes_since` / `open_items` / `concept_template`. A capable calling agent files knowledge itself, one round trip per action — no server-side model involved at any point.
   - **Coarse (needs a provider):** `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain`. Convenience for weaker clients — each call drives an internal LLM agent (with the OKF spec in its system prompt) that ends up calling the same granular tools above. `memory_status` is deterministic and needs no provider.
 - **Web UI** — browse the bundle (tree, concept viewer, update log, conformance badge), see the memory as an Obsidian-style **force-directed graph** (drag/pan/zoom, colored by type, sized by connections, orphans ringed red, click to open), and chat with the same agent to test it. Tool calls render inline so you can watch it work.
 - **Query-path replay** — every agent run (query/mutation/chat) records its traversal (searches → reads → writes) as a compact notation, persisted under `<bundle>/.traces/`. The graph view lists recent runs; selecting one replays the path as numbered directed hops over the graph — visited concepts ringed, search hits dotted, everything else faded.
@@ -190,7 +190,7 @@ Open WebUI added **native MCP support in v0.6.31**, over **streamable HTTP only*
 
 1. Add server, URL `http://host:3800/mcp`.
 2. Auth: `None` if the server has no `AUTH_TOKEN` set (open LAN), or `Bearer` with the token in the Key field if it does — the same `AUTH_TOKEN` used everywhere else in this README, checked by the identical middleware every other adapter goes through (see [Auth](#auth)). Don't pick `Bearer` with an empty Key — Prism, like most MCP servers, rejects that immediately rather than treating it as no auth.
-3. Save. Open WebUI discovers the granular tools (`concept_search`, `concept_read`, `concept_list`, `graph_lint`, `concept_related`, `concept_write`, `concept_patch`, `concept_delete`, `link_add`, `concept_supersede`, `concept_as_of`, `concept_capture`, `changes_since`, `open_items`) via `tools/list` and can call them directly from a chat — no separate LLM hop on Prism's side, since these are plain deterministic registry operations, not the agent-backed `memory_*` tools.
+3. Save. Open WebUI discovers the granular tools (`concept_search`, `concept_read`, `concept_list`, `graph_lint`, `concept_related`, `concept_write`, `concept_patch`, `concept_delete`, `link_add`, `concept_supersede`, `concept_as_of`, `concept_capture`, `changes_since`, `open_items`, `concept_template`) via `tools/list` and can call them directly from a chat — no separate LLM hop on Prism's side, since these are plain deterministic registry operations, not the agent-backed `memory_*` tools.
 
 **Non-admin users**: Open WebUI restricts registering MCP servers to admins. A user granted the **Direct Tool Servers** permission can add their *own* tool server under Settings → Integrations, but only as an **OpenAPI** connection — the connection type is locked, with no MCP option, for personal servers. Point that at `http://host:3800/api/v1/openapi.json` instead (see [REST API & OpenAPI](#rest-api--openapi-apiv1) below) — same registry operations, same auth, just the REST surface rather than MCP.
 
@@ -215,6 +215,7 @@ GET    /api/v1/concepts/as-of?as_of=...      # concept_as_of
 POST   /api/v1/concepts/capture              # concept_capture   (just {"text"}; files to /inbox — triage with GET /concepts/search?query=&tags=inbox)
 GET    /api/v1/changes?since=7d             # changes_since     (also: scope, limit; since = ISO date/date-time or 24h/7d/2w)
 GET    /api/v1/items/open                   # open_items        (also: status, owner, scope, overdue_only, limit)
+GET    /api/v1/templates?name=decision      # concept_template  (omit name to list; bundle overrides live in /.templates/<name>.md)
 ```
 
 The spec itself is at `GET /api/v1/openapi.json`; browse it interactively at `/api/v1/docs`. Adding an operation to the registry adds it to both the REST surface and the spec with no separate edit — see `packages/server/src/openapi/`. Regenerate the static file (e.g. for CI diffing) with `pnpm --filter @prism/server run openapi:generate`. The pre-existing read-only browse endpoints (`/tree`, `/search`, `/log`, `/graph`, ...) keep working unversioned at `/api/*` and are also aliased at `/api/v1/*`.
@@ -258,7 +259,7 @@ Keyword search (the derived SQLite+FTS index, or the plain scan as a fallback) i
 
 ```bash
 pnpm install                               # first run on a mounted/FUSE filesystem? see .npmrc — package-import-method=copy avoids an EPERM on install there
-pnpm test                                  # core (221 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, open items, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
+pnpm test                                  # core (231 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, open items, templates, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
 
 # Manual/exploratory checks — no LLM required for either of these:
 pnpm --filter @prism/server exec tsx scripts/registry-smoke.mts   # CORE_TOOLS registry CRUD round-trip against a throwaway bundle copy

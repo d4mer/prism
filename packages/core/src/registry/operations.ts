@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { recordHotDelete, recordHotWrite } from "../agent/hot-memory.js";
-import { normalizeScope, replaceSection, type ChangesReport, type OpenItemsReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
+import { normalizeScope, replaceSection, type ChangesReport, type ConceptTemplate, type OpenItemsReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
 import { BELIEF_SOURCES } from "../okf/temporal.js";
 import { ITEM_STATUSES, RESOLVED_STATUSES } from "../okf/fields.js";
 import { formatTree } from "./format-tree.js";
@@ -472,6 +472,12 @@ const conceptCaptureInput = z.object({
     .string()
     .optional()
     .describe("Bundle-relative directory to file into; defaults to /inbox for later triage"),
+  template: z
+    .string()
+    .optional()
+    .describe(
+      "PRISM-57: apply a concept template by name or type (see concept_template), e.g. 'decision', 'meeting-note', 'fit-gap'. Adds its defaults (type, status) and section skeleton below your text."
+    ),
 });
 type ConceptCaptureInput = z.infer<typeof conceptCaptureInput>;
 interface ConceptCaptureOutput {
@@ -488,8 +494,8 @@ export const conceptCaptureTool: ToolDefinition<ConceptCaptureInput, ConceptCapt
   inputSchema: conceptCaptureInput,
   mutates: true,
   requiresDeliberation: false,
-  async handler(kb, { text, title, type, tags, source, folder }, ctx) {
-    const c = await kb.capture({ text, title, type, tags, source, folder });
+  async handler(kb, { text, title, type, tags, source, folder, template }, ctx) {
+    const c = await kb.capture({ text, title, type, tags, source, folder, template });
     ctx?.filesChanged?.add(c.path);
     recordHotWrite(c.path);
     ctx?.trace?.record("concept_capture", c.path, [c.path], true);
@@ -555,5 +561,47 @@ export const openItemsTool: ToolDefinition<OpenItemsInput, OpenItemsReport> = {
     const report = await kb.openItems({ status, owner, scope, overdueOnly: overdue_only, limit });
     ctx?.trace?.record("open_items", owner ?? "", report.items.map((i) => i.path));
     return report;
+  },
+};
+
+// ── concept_template ─────────────────────────────────────────────────
+// PRISM-57: consistent structure for the documents consultants write most.
+
+const conceptTemplateInput = z.object({
+  name: z
+    .string()
+    .optional()
+    .describe("Template name or the type it produces, e.g. 'decision', 'Fit-Gap Item'. Omit to list every template."),
+});
+type ConceptTemplateInput = z.infer<typeof conceptTemplateInput>;
+type TemplateSummary = Pick<ConceptTemplate, "name" | "type" | "description" | "source"> & { sections: string[]; path?: string };
+type ConceptTemplateOutput = { templates: TemplateSummary[] } | ConceptTemplate;
+
+function sectionsOf(body: string): string[] {
+  return [...body.matchAll(/^#\s+(.+)$/gm)].map((m) => m[1].trim());
+}
+
+export const conceptTemplateTool: ToolDefinition<ConceptTemplateInput, ConceptTemplateOutput> = {
+  name: "concept_template",
+  title: "Concept templates",
+  description:
+    "Skeletons for the documents consultants write most: decision, meeting-note, fit-gap, requirement, interface, config-item (plus any the bundle defines in /.templates/<name>.md, which override built-ins of the same name). Without 'name', lists them with their sections. With 'name' (or the type it produces), returns the frontmatter defaults and markdown body to fill in and pass to concept_write, or pass template:'<name>' to concept_capture to apply it in one step. Using the same structure every time makes later retrieval far more precise.",
+  inputSchema: conceptTemplateInput,
+  mutates: false,
+  requiresDeliberation: false,
+  async handler(kb, { name }, ctx) {
+    ctx?.trace?.record("concept_template", name ?? "", []);
+    if (name) return kb.getTemplate(name);
+    const all = await kb.listTemplates();
+    return {
+      templates: all.map((t) => ({
+        name: t.name,
+        type: t.type,
+        description: t.description,
+        source: t.source,
+        sections: sectionsOf(t.body),
+        ...(t.path ? { path: t.path } : {}),
+      })),
+    };
   },
 };

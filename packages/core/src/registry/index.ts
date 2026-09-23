@@ -11,6 +11,7 @@ export {
   conceptRelatedTool,
   conceptSearchTool,
   conceptSupersedeTool,
+  conceptTemplateTool,
   conceptWriteTool,
   graphLintTool,
   linkAddTool,
@@ -29,6 +30,7 @@ import {
   conceptRelatedTool,
   conceptSearchTool,
   conceptSupersedeTool,
+  conceptTemplateTool,
   conceptWriteTool,
   graphLintTool,
   linkAddTool,
@@ -57,6 +59,7 @@ export const CORE_TOOLS: readonly ToolDefinition[] = [
   conceptCaptureTool,
   changesSinceTool,
   openItemsTool,
+  conceptTemplateTool,
 ];
 
 /** Read-only subset — safe for any caller, any tier. */
@@ -69,6 +72,7 @@ export const READ_TOOL_NAMES = [
   conceptAsOfTool.name,
   changesSinceTool.name,
   openItemsTool.name,
+  conceptTemplateTool.name,
 ] as const;
 
 /** Mutating subset — still zero-LLM; conformance is enforced beneath these by the OKF layer. */

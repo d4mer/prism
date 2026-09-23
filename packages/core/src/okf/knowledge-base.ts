@@ -12,6 +12,7 @@ import { queryAsOf } from "./asof.js";
 import { captureCandidates, planCapture, type CaptureOptions } from "./capture.js";
 import { changesSince, type ChangesOptions, type ChangesReport } from "./changes.js";
 import { listOpenItems, type OpenItemsOptions, type OpenItemsReport } from "./open-items.js";
+import { getTemplate, listTemplates, type ConceptTemplate } from "./templates.js";
 import {
   rebuildSearchIndex as rebuildSearchIndexFile,
   tryIndexedSearch,
@@ -117,6 +118,16 @@ export class KnowledgeBase {
    */
   changesSince(since: string, options?: ChangesOptions): Promise<ChangesReport> {
     return changesSince(this.bundle, since, options);
+  }
+
+  /** PRISM-57: available concept templates (built-ins + bundle /.templates overrides). */
+  listTemplates(): Promise<ConceptTemplate[]> {
+    return listTemplates(this.bundle);
+  }
+
+  /** PRISM-57: one template by name or produced type; throws listing what exists. */
+  getTemplate(nameOrType: string): Promise<ConceptTemplate> {
+    return getTemplate(this.bundle, nameOrType);
   }
 
   /** PRISM-56: tracked items (concepts with a `status`), overdue first. See okf/open-items.ts. */
@@ -241,8 +252,9 @@ export class KnowledgeBase {
    * Everything after that is the normal single-concept write path
    * (conformance, index.md, log.md, derived index, git autocommit).
    */
-  capture(options: CaptureOptions): Promise<Concept> {
-    const plan = planCapture(options);
+  async capture(options: CaptureOptions): Promise<Concept> {
+    const template = options.template ? await getTemplate(this.bundle, options.template) : undefined;
+    const plan = planCapture(options, template);
     return this.enqueue(async () => {
       let target = "";
       for (const candidate of captureCandidates(plan.stem)) {

@@ -23,8 +23,20 @@ export interface CaptureOptions {
   source?: string;
   /** Bundle-relative directory; defaults to /inbox. */
   folder?: string;
+  /**
+   * PRISM-57: name or type of a concept template ("decision", "Fit-Gap Item").
+   * Resolved by KnowledgeBase.capture(); its defaults (type, status, ...) and
+   * section skeleton are applied, with the captured text on top.
+   */
+  template?: string;
   /** Injected clock for deterministic tests. */
   now?: Date;
+}
+
+/** The parts of a resolved template planCapture() needs. */
+export interface CaptureTemplate {
+  frontmatter: ConceptFrontmatter;
+  body: string;
 }
 
 export interface CapturePlan {
@@ -74,7 +86,7 @@ export function normalizeFolder(folder: string | undefined): string {
   return "/" + parts.join("/");
 }
 
-export function planCapture(options: CaptureOptions): CapturePlan {
+export function planCapture(options: CaptureOptions, template?: CaptureTemplate): CapturePlan {
   const text = options.text.replace(/\r\n/g, "\n").trim();
   if (text.length === 0) throw new Error("text must not be empty");
   const now = options.now ?? new Date();
@@ -88,15 +100,19 @@ export function planCapture(options: CaptureOptions): CapturePlan {
     tags.push(INBOX_TAG);
   }
 
+  // Template defaults first (e.g. status: open on a Decision), then
+  // everything capture itself decides, which always wins.
   const frontmatter: ConceptFrontmatter = {
-    type: options.type?.trim() || DEFAULT_CAPTURE_TYPE,
+    ...(template?.frontmatter ?? {}),
+    type: options.type?.trim() || (template?.frontmatter.type as string | undefined) || DEFAULT_CAPTURE_TYPE,
     title,
     asserted: now.toISOString(),
     source: options.source ?? "human",
   };
   if (tags.length > 0) frontmatter.tags = [...new Set(tags)];
 
-  return { folder, stem, frontmatter, body: text + "\n" };
+  const body = template ? `${text}\n\n${template.body.trim()}\n` : text + "\n";
+  return { folder, stem, frontmatter, body };
 }
 
 /** Candidate paths for a stem: stem.md, stem-2.md, stem-3.md, … */

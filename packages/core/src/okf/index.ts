@@ -20,7 +20,7 @@ export {
   DEFAULT_CAPTURE_TYPE,
   INBOX_TAG,
 } from "./capture.js";
-export type { CaptureOptions, CapturePlan } from "./capture.js";
+export type { CaptureOptions, CapturePlan, CaptureTemplate } from "./capture.js";
 export { KnowledgeBase, type KnowledgeBaseOptions } from "./knowledge-base.js";
 export { changesSince, resolveSince } from "./changes.js";
 export type { ChangesReport, ChangeEntry, ChangeKind, DeletionEntry, ChangesOptions } from "./changes.js";
@@ -37,3 +37,5 @@ export {
 export type { ItemStatus } from "./fields.js";
 export { listOpenItems } from "./open-items.js";
 export type { OpenItem, OpenItemsReport, OpenItemsOptions } from "./open-items.js";
+export { listTemplates, getTemplate, TEMPLATES_DIR } from "./templates.js";
+export type { ConceptTemplate } from "./templates.js";
