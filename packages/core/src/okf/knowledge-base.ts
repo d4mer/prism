@@ -11,6 +11,7 @@ import { findRelated, type RelatedHit, type RelatedOptions } from "./related.js"
 import { queryAsOf } from "./asof.js";
 import { captureCandidates, planCapture, type CaptureOptions } from "./capture.js";
 import { changesSince, type ChangesOptions, type ChangesReport } from "./changes.js";
+import { listOpenItems, type OpenItemsOptions, type OpenItemsReport } from "./open-items.js";
 import {
   rebuildSearchIndex as rebuildSearchIndexFile,
   tryIndexedSearch,
@@ -116,6 +117,11 @@ export class KnowledgeBase {
    */
   changesSince(since: string, options?: ChangesOptions): Promise<ChangesReport> {
     return changesSince(this.bundle, since, options);
+  }
+
+  /** PRISM-56: tracked items (concepts with a `status`), overdue first. See okf/open-items.ts. */
+  openItems(options?: OpenItemsOptions): Promise<OpenItemsReport> {
+    return listOpenItems(this.bundle, options);
   }
 
   /**

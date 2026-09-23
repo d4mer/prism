@@ -27,6 +27,15 @@ export interface ConceptFrontmatter {
    * title weight; an exact whole-query alias match ranks first.
    */
   aliases?: string[];
+  /**
+   * PRISM-56: open-item tracking. A concept with a `status` is a tracked
+   * item (action, open question, decision awaiting sign-off).
+   */
+  status?: "open" | "in_progress" | "blocked" | "decided" | "closed";
+  /** Who owns the item — free text ("Priya", "Client IT"). */
+  owner?: string;
+  /** ISO 8601 date the item is due. */
+  due?: string;
   /** Producer-defined keys are permitted and preserved. */
   [key: string]: unknown;
 }

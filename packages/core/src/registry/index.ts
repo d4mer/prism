@@ -14,6 +14,7 @@ export {
   conceptWriteTool,
   graphLintTool,
   linkAddTool,
+  openItemsTool,
 } from "./operations.js";
 
 import type { ToolDefinition } from "./types.js";
@@ -31,6 +32,7 @@ import {
   conceptWriteTool,
   graphLintTool,
   linkAddTool,
+  openItemsTool,
 } from "./operations.js";
 
 /**
@@ -54,6 +56,7 @@ export const CORE_TOOLS: readonly ToolDefinition[] = [
   conceptAsOfTool,
   conceptCaptureTool,
   changesSinceTool,
+  openItemsTool,
 ];
 
 /** Read-only subset — safe for any caller, any tier. */
@@ -65,6 +68,7 @@ export const READ_TOOL_NAMES = [
   conceptRelatedTool.name,
   conceptAsOfTool.name,
   changesSinceTool.name,
+  openItemsTool.name,
 ] as const;
 
 /** Mutating subset — still zero-LLM; conformance is enforced beneath these by the OKF layer. */

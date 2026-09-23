@@ -6,6 +6,7 @@
  * validateBundle for hand-edited files).
  */
 import type { ConceptFrontmatter } from "./types.js";
+import { isValidIsoDate } from "./temporal.js";
 
 export class FieldValidationError extends Error {
   constructor(message: string) {
@@ -24,8 +25,27 @@ export function fieldProblems(fm: Record<string, unknown>): string[] {
   ) {
     problems.push(`"aliases" must be a list of non-empty strings, got ${JSON.stringify(aliases)}`);
   }
+  // PRISM-56: open-item fields.
+  const { status, owner, due } = fm;
+  if (status !== undefined && !(ITEM_STATUSES as readonly unknown[]).includes(status)) {
+    problems.push(`"status" must be one of ${ITEM_STATUSES.join(", ")}, got ${JSON.stringify(status)}`);
+  }
+  if (owner !== undefined && !(typeof owner === "string" && owner.trim().length > 0)) {
+    problems.push(`"owner" must be a non-empty string, got ${JSON.stringify(owner)}`);
+  }
+  if (due !== undefined && !isValidIsoDate(due)) {
+    problems.push(`"due" must be an ISO 8601 date, e.g. 2026-10-01, got ${JSON.stringify(due)}`);
+  }
   return problems;
 }
+
+// ── PRISM-56: open items ──────────────────────────────────────────────
+
+/** Lifecycle of a tracked item (action, open question, decision awaiting sign-off). */
+export const ITEM_STATUSES = ["open", "in_progress", "blocked", "decided", "closed"] as const;
+export type ItemStatus = (typeof ITEM_STATUSES)[number];
+/** Statuses that mean "nothing left to do" — excluded from open_items by default, never overdue. */
+export const RESOLVED_STATUSES: readonly ItemStatus[] = ["decided", "closed"];
 
 export function validateConsultantFields(fm: ConceptFrontmatter): void {
   const problems = fieldProblems(fm);

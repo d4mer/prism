@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidIsoDate, BELIEF_SOURCES } from "../okf/temporal.js";
+import { ITEM_STATUSES } from "../okf/fields.js";
 
 /** Bundle-relative concept path, e.g. "/tables/customers.md". */
 export const conceptPathSchema = z
@@ -19,6 +20,17 @@ export const frontmatterSchema = z
       .describe(
         "PRISM-55: other names for this concept — acronyms, long forms, client jargon, transaction codes (e.g. ['L2L', 'local-to-local']). Searched like the title; an exact alias match ranks first."
       ),
+    // PRISM-56: open-item tracking — a concept with a status is an item.
+    status: z
+      .enum(ITEM_STATUSES)
+      .optional()
+      .describe(`Makes this concept a tracked item (action, open question, decision awaiting sign-off): one of ${ITEM_STATUSES.join(", ")}`),
+    owner: z.string().min(1).optional().describe("Who owns the item, free text"),
+    due: z
+      .string()
+      .refine(isValidIsoDate, { message: "must be an ISO 8601 date, e.g. 2026-10-01" })
+      .optional()
+      .describe("When the item is due (ISO 8601 date)"),
     // PRISM-22: temporal & provenance. All optional/additive — a concept
     // that never sets these stays fully valid. Deep checks (existence,
     // cycle detection) happen in Bundle.writeConcept; these are the

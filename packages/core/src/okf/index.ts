@@ -25,4 +25,15 @@ export { KnowledgeBase, type KnowledgeBaseOptions } from "./knowledge-base.js";
 export { changesSince, resolveSince } from "./changes.js";
 export type { ChangesReport, ChangeEntry, ChangeKind, DeletionEntry, ChangesOptions } from "./changes.js";
 export { normalizeScope, inScope } from "./scope.js";
-export { aliasesOf, aliasScore, fieldProblems, validateConsultantFields, FieldValidationError } from "./fields.js";
+export {
+  aliasesOf,
+  aliasScore,
+  fieldProblems,
+  validateConsultantFields,
+  FieldValidationError,
+  ITEM_STATUSES,
+  RESOLVED_STATUSES,
+} from "./fields.js";
+export type { ItemStatus } from "./fields.js";
+export { listOpenItems } from "./open-items.js";
+export type { OpenItem, OpenItemsReport, OpenItemsOptions } from "./open-items.js";

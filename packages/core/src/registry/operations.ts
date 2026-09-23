@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { recordHotDelete, recordHotWrite } from "../agent/hot-memory.js";
-import { normalizeScope, replaceSection, type ChangesReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
+import { normalizeScope, replaceSection, type ChangesReport, type OpenItemsReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
 import { BELIEF_SOURCES } from "../okf/temporal.js";
+import { ITEM_STATUSES, RESOLVED_STATUSES } from "../okf/fields.js";
 import { formatTree } from "./format-tree.js";
 import { conceptPathSchema, frontmatterSchema, logSummarySchema } from "./schemas.js";
 import type { ToolDefinition } from "./types.js";
@@ -523,6 +524,36 @@ export const changesSinceTool: ToolDefinition<ChangesSinceInput, ChangesReport> 
   async handler(kb, { since, scope, limit }, ctx) {
     const report = await kb.changesSince(since, { scope, limit });
     ctx?.trace?.record("changes_since", since, report.changes.map((c) => c.path));
+    return report;
+  },
+};
+
+// ── open_items ───────────────────────────────────────────────────────
+// PRISM-56: the action log / RAID view over the knowledge store.
+
+const openItemsInput = z.object({
+  status: z
+    .array(z.enum(ITEM_STATUSES))
+    .optional()
+    .describe(`Statuses to include (default: every unresolved one — ${ITEM_STATUSES.filter((s) => !RESOLVED_STATUSES.includes(s)).join(", ")})`),
+  owner: z.string().optional().describe('Case-insensitive owner match, e.g. "priya" matches "Priya S."'),
+  scope: z.string().optional().describe('Only items under this bundle directory, e.g. "/emea"'),
+  overdue_only: z.boolean().optional().describe("Only items past their due date"),
+  limit: z.number().int().positive().optional().describe("Max items returned (default 100); counts stay complete"),
+});
+type OpenItemsInput = z.infer<typeof openItemsInput>;
+
+export const openItemsTool: ToolDefinition<OpenItemsInput, OpenItemsReport> = {
+  name: "open_items",
+  title: "Open items",
+  description:
+    "The action log: every tracked item (a concept with a 'status' frontmatter field — actions, open questions, decisions awaiting sign-off) that is still unresolved, overdue first, then by due date. Filter by status, owner, scope or overdue_only. Each item has path, title, status, owner, due and overdue/days_overdue. To track something, set status (open | in_progress | blocked | decided | closed), and optionally owner and due, via concept_write or concept_patch; mark it decided/closed to drop it from this list.",
+  inputSchema: openItemsInput,
+  mutates: false,
+  requiresDeliberation: false,
+  async handler(kb, { status, owner, scope, overdue_only, limit }, ctx) {
+    const report = await kb.openItems({ status, owner, scope, overdueOnly: overdue_only, limit });
+    ctx?.trace?.record("open_items", owner ?? "", report.items.map((i) => i.path));
     return report;
   },
 };
