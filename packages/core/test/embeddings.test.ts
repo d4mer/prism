@@ -143,6 +143,19 @@ describe("PRISM-37: embeddings and hybrid ranking", () => {
     expect(indexed?.map((h) => h.path)).toEqual(["/apis/chronoflux.md"]);
   });
 
+  it("PRISM-54: a semantic-only match outside the scope is never surfaced", async () => {
+    await kb.writeConcept("/clients/acme/throttle.md", { type: "API", title: "ChronoFlux at Acme" }, "ChronoFlux caps bursts.", "add");
+    await kb.writeConcept("/clients/globex/throttle.md", { type: "API", title: "ChronoFlux at Globex" }, "ChronoFlux caps bursts.", "add");
+    await kb.rebuildSearchIndex();
+    await generateEmbeddings(kb.bundle, { config });
+    // Unscoped, the semantic match finds both clients' notes...
+    const all = await withEmbeddingEnv(() => tryIndexedSearch(kb.bundle, "PARSEC-7"));
+    expect(all?.map((h) => h.path).sort()).toEqual(["/clients/acme/throttle.md", "/clients/globex/throttle.md"]);
+    // ...scoped to one client, the other client's note never leaks in.
+    const acme = await withEmbeddingEnv(() => tryIndexedSearch(kb.bundle, "PARSEC-7", { scope: "/clients/acme" }));
+    expect(acme?.map((h) => h.path)).toEqual(["/clients/acme/throttle.md"]);
+  });
+
   it("AC2: with no EMBEDDING_* config, indexed search matches the legacy scan exactly (unaffected by any embeddings present)", async () => {
     await kb.writeConcept(
       "/apis/chronoflux.md",

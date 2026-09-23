@@ -80,6 +80,12 @@ const QUERIES: { query: string; options?: SearchOptions }[] = [
   { query: "", options: { tags: ["prod"] } },
   { query: "postgres", options: { includeHistory: true } },
   { query: "nonexistenttermxyz" },
+  // PRISM-54: scope parity, including the sibling-prefix case ("/host" must
+  // not match "/hosts/...") and a trailing-slash form.
+  { query: "web", options: { scope: "/hosts" } },
+  { query: "", options: { scope: "/playbooks/" } },
+  { query: "web", options: { scope: "/host" } },
+  { query: "db01", options: { scope: "/hosts", includeHistory: true } },
 ];
 
 describe("PRISM-35: derived SQLite search index", () => {
@@ -247,6 +253,28 @@ describe("PRISM-35: derived SQLite search index", () => {
     const indexed = await tryIndexedSearch(kb.bundle, "zzzlegacy");
     expect(indexed).toEqual(scanned);
     expect(scanned[0]?.type).toBe("unknown");
+  });
+
+  it("PRISM-54: scoped search is directory-aligned and identical on both paths", async () => {
+    await seedBundle();
+    await kb.writeConcept(
+      "/hosts-archive/web00.md",
+      { type: "Host", title: "web00", tags: ["web"] },
+      "Decommissioned web server.",
+      "Added web00."
+    );
+    await kb.rebuildSearchIndex();
+    const options: SearchOptions = { scope: "/hosts" };
+    const scanned = await searchBundle(kb.bundle, "web", options);
+    const indexed = await tryIndexedSearch(kb.bundle, "web", options);
+    expect(indexed).toEqual(scanned);
+    expect(scanned.map((h) => h.path)).toEqual(["/hosts/web01.md"]);
+    // Unscoped still sees the sibling folder — scope is purely additive.
+    expect((await kb.search("web")).map((h) => h.path)).toContain("/hosts-archive/web00.md");
+    // Browse mode (empty query) within a scope, and limit applied AFTER scoping.
+    const browse = await kb.search("", { scope: "/hosts" });
+    expect(browse.map((h) => h.path).sort()).toEqual(["/hosts/db01-v2.md", "/hosts/web01.md"]);
+    expect(await kb.search("", { scope: "/hosts", limit: 1 })).toHaveLength(1);
   });
 
   it("multi-word tags filter identically to the legacy scan (regression: tags_joined must not be re-split for exact filtering)", async () => {

@@ -308,6 +308,25 @@ describe("link_add", () => {
   });
 });
 
+describe("concept_search scope (PRISM-54)", () => {
+  it("restricts hits to the scope and falls back to the whole layout on a mistyped scope", async () => {
+    await kb.writeConcept("/emea/cmo/ss.md", { type: "Decision", title: "Safety stock" }, "banding", "add");
+    await kb.writeConcept("/latam/ss.md", { type: "Decision", title: "Safety stock" }, "dynamic", "add");
+    const hits = await conceptSearchTool.handler(kb, conceptSearchTool.inputSchema.parse({ query: "safety", scope: "/emea" }));
+    expect(Array.isArray(hits) && hits.map((h) => h.path)).toEqual(["/emea/cmo/ss.md"]);
+
+    const miss = await conceptSearchTool.handler(kb, conceptSearchTool.inputSchema.parse({ query: "safety", scope: "/apac" }));
+    expect(Array.isArray(miss)).toBe(false);
+    if (!Array.isArray(miss)) expect(miss.bundle_layout).toContain("latam");
+
+    const scopedMiss = await conceptSearchTool.handler(kb, conceptSearchTool.inputSchema.parse({ query: "nothing-here", scope: "/emea" }));
+    if (!Array.isArray(scopedMiss)) {
+      expect(scopedMiss.bundle_layout).toContain("cmo");
+      expect(scopedMiss.bundle_layout).not.toContain("latam");
+    }
+  });
+});
+
 describe("concept_related", () => {
   it("returns direct neighbors at hop 1, tagged with distance, via the handler (round-trip through the registry, not okf directly)", async () => {
     await conceptWriteTool.handler(kb, {

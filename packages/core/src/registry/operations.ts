@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { recordHotDelete, recordHotWrite } from "../agent/hot-memory.js";
-import { replaceSection, type ChangesReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
+import { normalizeScope, replaceSection, type ChangesReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
 import { BELIEF_SOURCES } from "../okf/temporal.js";
 import { formatTree } from "./format-tree.js";
 import { conceptPathSchema, frontmatterSchema, logSummarySchema } from "./schemas.js";
@@ -19,6 +19,12 @@ const conceptSearchInput = z.object({
     .describe(
       "PRISM-24: include superseded (historical) concepts, each marked superseded:true. Default: current beliefs only — use concept_as_of for a snapshot at a specific date instead."
     ),
+  scope: z
+    .string()
+    .optional()
+    .describe(
+      'PRISM-54: only search under this bundle directory, e.g. "/clients/acme" or "/emea/cmo" — use it to keep one workstream or client separate from another. Directory-aligned: "/clients/acme" does not match "/clients/acme-corp".'
+    ),
 });
 type ConceptSearchInput = z.infer<typeof conceptSearchInput>;
 interface ConceptSearchMiss {
@@ -32,15 +38,20 @@ export const conceptSearchTool: ToolDefinition<ConceptSearchInput, ConceptSearch
   name: "concept_search",
   title: "Search knowledge",
   description:
-    "Search the knowledge base by keywords, optionally filtered by concept type and/or tags, capped at 'limit' hits (default 20). Returns ranked hits with paths and snippets. Excludes superseded (historical) concepts by default (PRISM-24) — set include_history to include them (marked superseded:true), or use concept_as_of for a snapshot as of a specific date. NOTE: matching is keyword-based, not semantic — a miss does NOT mean the knowledge is absent; it may be worded differently.",
+    "Search the knowledge base by keywords, optionally filtered by concept type, tags and/or a directory scope (one workstream/client), capped at 'limit' hits (default 20). Returns ranked hits with paths and snippets. Excludes superseded (historical) concepts by default (PRISM-24) — set include_history to include them (marked superseded:true), or use concept_as_of for a snapshot as of a specific date. NOTE: matching is keyword-based, not semantic — a miss does NOT mean the knowledge is absent; it may be worded differently.",
   inputSchema: conceptSearchInput,
   mutates: false,
   requiresDeliberation: false,
-  async handler(kb, { query, type, tags, limit, include_history }, ctx) {
-    const hits = await kb.search(query, { type, tags, limit, includeHistory: include_history });
+  async handler(kb, { query, type, tags, limit, include_history, scope }, ctx) {
+    const hits = await kb.search(query, { type, tags, limit, includeHistory: include_history, scope });
     ctx?.trace?.record("concept_search", query, hits.map((h) => h.path));
     if (hits.length > 0) return hits;
-    const tree = formatTree(await kb.listTree());
+    // Scoped miss: show the scoped layout when that directory exists, the
+    // whole bundle otherwise (a mistyped scope is itself worth seeing).
+    const normalized = normalizeScope(scope);
+    const tree = formatTree(
+      normalized ? await kb.listTree(normalized).catch(() => kb.listTree()) : await kb.listTree()
+    );
     return {
       hits: [],
       notice:

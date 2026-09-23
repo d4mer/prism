@@ -202,7 +202,7 @@ Every deterministic registry operation (search/read/list/write/patch/delete/link
 
 ```
 GET    /api/v1/concepts?prefix=/apis         # concept_list
-GET    /api/v1/concepts/search?query=...     # concept_search    (also: type, tags, limit, include_history)
+GET    /api/v1/concepts/search?query=...     # concept_search    (also: type, tags, limit, include_history, scope)
 GET    /api/v1/concepts/one?path=...         # concept_read
 GET    /api/v1/graph/lint                    # graph_lint
 GET    /api/v1/concepts/related?path=...     # concept_related   (also: hops, include_history)
@@ -257,7 +257,7 @@ Keyword search (the derived SQLite+FTS index, or the plain scan as a fallback) i
 
 ```bash
 pnpm install                               # first run on a mounted/FUSE filesystem? see .npmrc — package-import-method=copy avoids an EPERM on install there
-pnpm test                                  # core (201 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
+pnpm test                                  # core (204 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
 
 # Manual/exploratory checks — no LLM required for either of these:
 pnpm --filter @prism/server exec tsx scripts/registry-smoke.mts   # CORE_TOOLS registry CRUD round-trip against a throwaway bundle copy

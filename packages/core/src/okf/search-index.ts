@@ -8,6 +8,7 @@ import type { Bundle } from "./bundle.js";
 import type { Concept, ConceptFrontmatter, SearchHit } from "./types.js";
 import type { SearchOptions } from "./search.js";
 import { resolveEmbeddingConfig, embedQuery } from "../providers/embeddings.js";
+import { inScope, normalizeScope } from "./scope.js";
 
 /**
  * PRISM-37: additive weight given to a semantic (embedding) match, on the
@@ -412,8 +413,13 @@ export function searchIndexed(
     embedding_hash: string | null;
   }>;
 
+  const scope = normalizeScope(options.scope);
   const hits: SearchHit[] = [];
   for (const row of rows) {
+    // PRISM-54: same directory-aligned test as searchBundle(), so the two
+    // paths stay result-identical (AC2 parity) — including for the hybrid
+    // embedding ranking below, which only ever sees in-scope rows.
+    if (!inScope(row.path, scope)) continue;
     if (row.superseded && !options.includeHistory) continue;
     if (options.type && row.type.toLowerCase() !== options.type.toLowerCase()) continue;
 

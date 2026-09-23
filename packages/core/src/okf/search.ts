@@ -1,5 +1,6 @@
 import type { Bundle } from "./bundle.js";
 import type { SearchHit } from "./types.js";
+import { inScope, normalizeScope } from "./scope.js";
 
 export interface SearchOptions {
   type?: string;
@@ -7,6 +8,11 @@ export interface SearchOptions {
   limit?: number;
   /** PRISM-24: include superseded (historical) concepts, each marked superseded:true. Default: current beliefs only. */
   includeHistory?: boolean;
+  /**
+   * PRISM-54: only concepts under this bundle directory (directory-aligned,
+   * see okf/scope.ts). Applied identically by the scan and the derived index.
+   */
+  scope?: string;
 }
 
 /**
@@ -22,10 +28,12 @@ export async function searchBundle(
     .toLowerCase()
     .split(/\s+/)
     .filter((t) => t.length > 1);
+  const scope = normalizeScope(options.scope);
   const paths = await bundle.listConceptPaths();
   const hits: SearchHit[] = [];
 
   for (const conceptPath of paths) {
+    if (!inScope(conceptPath, scope)) continue;
     let concept;
     try {
       concept = await bundle.readConcept(conceptPath);
