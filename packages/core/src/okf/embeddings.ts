@@ -21,8 +21,11 @@ const BATCH_SIZE = 64;
 
 function embeddingText(fm: ConceptFrontmatter, body: string): string {
   const tags = Array.isArray(fm.tags) ? fm.tags.map(String).join(", ") : "";
+  // PRISM-55: aliases carry exactly the jargon/acronym signal embeddings are for.
+  const aliases = Array.isArray(fm.aliases) ? fm.aliases.map(String).join(", ") : "";
   const parts = [
     typeof fm.title === "string" ? fm.title : "",
+    aliases,
     typeof fm.description === "string" ? fm.description : "",
     tags,
     body,

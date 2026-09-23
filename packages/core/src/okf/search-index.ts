@@ -9,6 +9,7 @@ import type { Concept, ConceptFrontmatter, SearchHit } from "./types.js";
 import type { SearchOptions } from "./search.js";
 import { resolveEmbeddingConfig, embedQuery } from "../providers/embeddings.js";
 import { inScope, normalizeScope } from "./scope.js";
+import { aliasesOf, aliasScore } from "./fields.js";
 
 /**
  * PRISM-37: additive weight given to a semantic (embedding) match, on the
@@ -442,7 +443,15 @@ export function searchIndexed(
     const body = row.body.toLowerCase();
     const pathLower = row.path.toLowerCase();
 
+    // PRISM-55: aliases are read from frontmatter_json — present in every
+    // row of every index, old or new — so no schema bump or rebuild is
+    // needed for alias search to be correct. The substring guard skips the
+    // JSON.parse for the (typical) row that has no aliases at all.
     let score = 0;
+    if (terms.length > 0 && row.frontmatter_json.includes('"aliases"')) {
+      fm ??= JSON.parse(row.frontmatter_json) as ConceptFrontmatter;
+      score = aliasScore(aliasesOf(fm), terms, query);
+    }
     let firstBodyMatch = -1;
     for (const term of terms) {
       if (title.includes(term)) score += 10;

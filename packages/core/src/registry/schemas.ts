@@ -13,6 +13,12 @@ export const frontmatterSchema = z
     description: z.string().optional().describe("One-line summary"),
     resource: z.string().optional().describe("Canonical URI of the underlying asset"),
     tags: z.array(z.string()).optional(),
+    aliases: z
+      .array(z.string().min(1))
+      .optional()
+      .describe(
+        "PRISM-55: other names for this concept — acronyms, long forms, client jargon, transaction codes (e.g. ['L2L', 'local-to-local']). Searched like the title; an exact alias match ranks first."
+      ),
     // PRISM-22: temporal & provenance. All optional/additive — a concept
     // that never sets these stays fully valid. Deep checks (existence,
     // cycle detection) happen in Bundle.writeConcept; these are the

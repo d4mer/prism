@@ -21,6 +21,12 @@ export interface ConceptFrontmatter {
   supersedes?: string;
   /** Bundle-relative path of the concept that replaced this one. */
   superseded_by?: string;
+  /**
+   * PRISM-55: other names this concept is known by — acronyms, long forms,
+   * client jargon, transaction codes ("L2L", "local-to-local"). Searched at
+   * title weight; an exact whole-query alias match ranks first.
+   */
+  aliases?: string[];
   /** Producer-defined keys are permitted and preserved. */
   [key: string]: unknown;
 }

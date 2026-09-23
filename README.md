@@ -257,7 +257,7 @@ Keyword search (the derived SQLite+FTS index, or the plain scan as a fallback) i
 
 ```bash
 pnpm install                               # first run on a mounted/FUSE filesystem? see .npmrc — package-import-method=copy avoids an EPERM on install there
-pnpm test                                  # core (204 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
+pnpm test                                  # core (212 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
 
 # Manual/exploratory checks — no LLM required for either of these:
 pnpm --filter @prism/server exec tsx scripts/registry-smoke.mts   # CORE_TOOLS registry CRUD round-trip against a throwaway bundle copy

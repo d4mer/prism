@@ -143,6 +143,15 @@ describe("PRISM-37: embeddings and hybrid ranking", () => {
     expect(indexed?.map((h) => h.path)).toEqual(["/apis/chronoflux.md"]);
   });
 
+  it("PRISM-55: aliases feed the embedding text, so jargon living only in an alias is semantically findable", async () => {
+    await kb.writeConcept("/apis/gateway.md", { type: "API", title: "Legacy gateway", aliases: ["ChronoFlux"] }, "Rate limits.", "add");
+    await kb.writeConcept("/misc/other.md", { type: "Note", title: "Other" }, "Unrelated.", "add");
+    await kb.rebuildSearchIndex();
+    await generateEmbeddings(kb.bundle, { config });
+    const hits = await withEmbeddingEnv(() => tryIndexedSearch(kb.bundle, "PARSEC-7"));
+    expect(hits?.map((h) => h.path)).toEqual(["/apis/gateway.md"]);
+  });
+
   it("PRISM-54: a semantic-only match outside the scope is never surfaced", async () => {
     await kb.writeConcept("/clients/acme/throttle.md", { type: "API", title: "ChronoFlux at Acme" }, "ChronoFlux caps bursts.", "add");
     await kb.writeConcept("/clients/globex/throttle.md", { type: "API", title: "ChronoFlux at Globex" }, "ChronoFlux caps bursts.", "add");

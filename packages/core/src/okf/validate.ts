@@ -1,5 +1,6 @@
 import { parseDoc, hasNonEmptyType } from "./frontmatter.js";
 import { isValidIsoDate, BELIEF_SOURCES } from "./temporal.js";
+import { fieldProblems } from "./fields.js";
 import type { Bundle } from "./bundle.js";
 import type { ConformanceIssue, ConformanceReport } from "./types.js";
 
@@ -76,6 +77,10 @@ export async function validateBundle(bundle: Bundle): Promise<ConformanceReport>
     // are already rejected at write time by Bundle.writeConcept; this only
     // catches a bundle that was hand-edited or written before validation
     // existed.
+    // PRISM-55+: consultant fields (aliases, ...) — same warning-only stance.
+    for (const problem of fieldProblems(frontmatter)) {
+      issues.push({ path: conceptPath, severity: "warning", message: problem });
+    }
     const { asserted, source, confidence, supersedes, superseded_by } = frontmatter;
     if (asserted !== undefined && !isValidIsoDate(asserted)) {
       issues.push({

@@ -38,7 +38,7 @@ export const conceptSearchTool: ToolDefinition<ConceptSearchInput, ConceptSearch
   name: "concept_search",
   title: "Search knowledge",
   description:
-    "Search the knowledge base by keywords, optionally filtered by concept type, tags and/or a directory scope (one workstream/client), capped at 'limit' hits (default 20). Returns ranked hits with paths and snippets. Excludes superseded (historical) concepts by default (PRISM-24) — set include_history to include them (marked superseded:true), or use concept_as_of for a snapshot as of a specific date. NOTE: matching is keyword-based, not semantic — a miss does NOT mean the knowledge is absent; it may be worded differently.",
+    "Search the knowledge base by keywords, optionally filtered by concept type, tags and/or a directory scope (one workstream/client), capped at 'limit' hits (default 20). Returns ranked hits with paths and snippets. Excludes superseded (historical) concepts by default (PRISM-24) — set include_history to include them (marked superseded:true), or use concept_as_of for a snapshot as of a specific date. Matches a concept's aliases (acronyms/long forms) like its title, and an exact alias match ranks first (PRISM-55). NOTE: matching is keyword-based, not semantic — a miss does NOT mean the knowledge is absent; it may be worded differently.",
   inputSchema: conceptSearchInput,
   mutates: false,
   requiresDeliberation: false,

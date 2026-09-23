@@ -1,6 +1,7 @@
 import type { Bundle } from "./bundle.js";
 import type { SearchHit } from "./types.js";
 import { inScope, normalizeScope } from "./scope.js";
+import { aliasesOf, aliasScore } from "./fields.js";
 
 export interface SearchOptions {
   type?: string;
@@ -62,7 +63,9 @@ export async function searchBundle(
     const body = concept.body.toLowerCase();
     const pathLower = conceptPath.toLowerCase();
 
-    let score = 0;
+    // PRISM-55: aliases (acronyms, long forms) score like the title, plus
+    // a boost for an exact whole-query alias match.
+    let score = aliasScore(aliasesOf(fm), terms, query);
     let firstBodyMatch = -1;
     for (const term of terms) {
       if (title.includes(term)) score += 10;

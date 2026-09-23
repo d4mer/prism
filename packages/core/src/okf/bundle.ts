@@ -4,6 +4,7 @@ import { parseDoc, serializeDoc, hasNonEmptyType } from "./frontmatter.js";
 import { RESERVED_FILENAMES } from "./types.js";
 import type { Concept, ConceptFrontmatter, TreeNode } from "./types.js";
 import { validateTemporalFrontmatter, TemporalFrontmatterError } from "./temporal.js";
+import { validateConsultantFields, FieldValidationError } from "./fields.js";
 
 export class BundleError extends Error {
   constructor(
@@ -152,8 +153,12 @@ export class Bundle {
       );
     }
     try {
+      validateConsultantFields(frontmatter);
       await validateTemporalFrontmatter(this, canonical, frontmatter);
     } catch (err) {
+      if (err instanceof FieldValidationError) {
+        throw new BundleError(err.message, "INVALID_FRONTMATTER");
+      }
       if (err instanceof TemporalFrontmatterError) {
         throw new BundleError(err.message, "INVALID_FRONTMATTER");
       }
