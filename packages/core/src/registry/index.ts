@@ -2,6 +2,7 @@ export type { ToolContext, ToolDefinition } from "./types.js";
 export { conceptPathSchema, frontmatterSchema, logSummarySchema } from "./schemas.js";
 export {
   conceptAsOfTool,
+  conceptCaptureTool,
   conceptDeleteTool,
   conceptListTool,
   conceptPatchTool,
@@ -17,6 +18,7 @@ export {
 import type { ToolDefinition } from "./types.js";
 import {
   conceptAsOfTool,
+  conceptCaptureTool,
   conceptDeleteTool,
   conceptListTool,
   conceptPatchTool,
@@ -48,6 +50,7 @@ export const CORE_TOOLS: readonly ToolDefinition[] = [
   linkAddTool,
   conceptSupersedeTool,
   conceptAsOfTool,
+  conceptCaptureTool,
 ];
 
 /** Read-only subset — safe for any caller, any tier. */
@@ -67,6 +70,7 @@ export const WRITE_TOOL_NAMES = [
   conceptDeleteTool.name,
   linkAddTool.name,
   conceptSupersedeTool.name,
+  conceptCaptureTool.name,
 ] as const;
 
 export function getTool(name: string): ToolDefinition | undefined {

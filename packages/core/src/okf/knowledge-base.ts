@@ -9,6 +9,7 @@ import { lintBundle, type LintReport } from "./lint.js";
 import { buildGraph, type GraphData } from "./graph.js";
 import { findRelated, type RelatedHit, type RelatedOptions } from "./related.js";
 import { queryAsOf } from "./asof.js";
+import { captureCandidates, planCapture, type CaptureOptions } from "./capture.js";
 import {
   rebuildSearchIndex as rebuildSearchIndexFile,
   tryIndexedSearch,
@@ -212,6 +213,36 @@ export class KnowledgeBase {
         }
       }
       return { old: updatedOld, new: created };
+    });
+  }
+
+  /**
+   * PRISM-52: quick capture — file a note from just its text. Path, title,
+   * type, tags and provenance are derived deterministically (okf/capture.ts);
+   * the collision-free path is allocated INSIDE the mutation queue, so two
+   * simultaneous captures with the same title land in two files, never one.
+   * Everything after that is the normal single-concept write path
+   * (conformance, index.md, log.md, derived index, git autocommit).
+   */
+  capture(options: CaptureOptions): Promise<Concept> {
+    const plan = planCapture(options);
+    return this.enqueue(async () => {
+      let target = "";
+      for (const candidate of captureCandidates(plan.stem)) {
+        if (!(await this.bundle.exists(candidate))) {
+          target = candidate;
+          break;
+        }
+      }
+      const concept = await this.bundle.writeConcept(target, plan.frontmatter, plan.body);
+      const title = String(concept.frontmatter.title ?? concept.path);
+      await this.afterMutation(
+        concept.path,
+        "Creation",
+        `Captured [${title}](${concept.path}) to ${plan.folder}.`,
+        concept
+      );
+      return concept;
     });
   }
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { recordHotDelete, recordHotWrite } from "../agent/hot-memory.js";
 import { replaceSection, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
+import { BELIEF_SOURCES } from "../okf/temporal.js";
 import { formatTree } from "./format-tree.js";
 import { conceptPathSchema, frontmatterSchema, logSummarySchema } from "./schemas.js";
 import type { ToolDefinition } from "./types.js";
@@ -435,5 +436,51 @@ export const conceptAsOfTool: ToolDefinition<ConceptAsOfInput, ConceptAsOfHit[]>
     const results = await kb.asOf(as_of);
     ctx?.trace?.record("concept_as_of", as_of, results.map((c) => c.path));
     return results.map((c) => ({ path: c.path, frontmatter: c.frontmatter, body: c.body }));
+  },
+};
+
+// ── concept_capture ──────────────────────────────────────────────────
+// PRISM-52: the zero-friction write. Everything concept_write asks for up
+// front (path, type, log summary) is derived here so a note can be filed
+// mid-meeting from just its text, then triaged later from /inbox.
+
+const conceptCaptureInput = z.object({
+  text: z
+    .string()
+    .refine((t) => t.trim().length > 0, { message: "must not be empty" })
+    .describe("The note itself, as markdown. The first line doubles as the title if none is given."),
+  title: z.string().optional().describe("Optional title; defaults to the first line of text"),
+  type: z.string().optional().describe("Concept type; defaults to 'note'"),
+  tags: z.array(z.string()).optional().describe("Optional tags. Captures to the default /inbox also get the 'inbox' tag."),
+  source: z
+    .enum(BELIEF_SOURCES)
+    .optional()
+    .describe(`Provenance (PRISM-22), one of ${BELIEF_SOURCES.join(", ")}; defaults to 'human'`),
+  folder: z
+    .string()
+    .optional()
+    .describe("Bundle-relative directory to file into; defaults to /inbox for later triage"),
+});
+type ConceptCaptureInput = z.infer<typeof conceptCaptureInput>;
+interface ConceptCaptureOutput {
+  captured: string;
+  title: string;
+  type: string;
+}
+
+export const conceptCaptureTool: ToolDefinition<ConceptCaptureInput, ConceptCaptureOutput> = {
+  name: "concept_capture",
+  title: "Quick capture",
+  description:
+    "File a note in one call from just its text — no path, type or log summary needed. The path is derived as <folder>/YYYY-MM-DD-<slug>.md (default folder /inbox, never overwriting: a same-day duplicate title gets a -2/-3 suffix), the title from the first line, type defaults to 'note', and asserted/source provenance is stamped. Default-folder captures are tagged 'inbox' so they can be triaged later with concept_search (tags:['inbox']) and moved/linked properly. Use this when speed matters more than filing it perfectly; use concept_write when you already know exactly where and what it is.",
+  inputSchema: conceptCaptureInput,
+  mutates: true,
+  requiresDeliberation: false,
+  async handler(kb, { text, title, type, tags, source, folder }, ctx) {
+    const c = await kb.capture({ text, title, type, tags, source, folder });
+    ctx?.filesChanged?.add(c.path);
+    recordHotWrite(c.path);
+    ctx?.trace?.record("concept_capture", c.path, [c.path], true);
+    return { captured: c.path, title: String(c.frontmatter.title), type: c.frontmatter.type };
   },
 };

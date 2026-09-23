@@ -11,6 +11,7 @@ import {
   WRITE_TOOL_NAMES,
   getTool,
   conceptAsOfTool,
+  conceptCaptureTool,
   conceptDeleteTool,
   conceptListTool,
   conceptPatchTool,
@@ -37,7 +38,7 @@ afterEach(async () => {
 });
 
 describe("CORE_TOOLS registry", () => {
-  it("lists exactly the eleven deterministic operations, correctly classified", () => {
+  it("lists exactly the twelve deterministic operations, correctly classified", () => {
     const names = [...CORE_TOOLS.map((t) => t.name)].sort();
     expect(names).toEqual(
       [
@@ -52,6 +53,7 @@ describe("CORE_TOOLS registry", () => {
         "link_add",
         "concept_supersede",
         "concept_as_of",
+        "concept_capture",
       ].sort()
     );
     // Every registry entry is Tier 0/1 — never Tier 2. This is the
@@ -61,7 +63,7 @@ describe("CORE_TOOLS registry", () => {
     }
     const mutators = [...CORE_TOOLS.filter((t) => t.mutates).map((t) => t.name)].sort();
     expect(mutators).toEqual(
-      ["concept_delete", "concept_patch", "concept_write", "link_add", "concept_supersede"].sort()
+      ["concept_delete", "concept_patch", "concept_write", "link_add", "concept_supersede", "concept_capture"].sort()
     );
   });
 

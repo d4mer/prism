@@ -12,4 +12,13 @@ export type { GraphData, GraphNode, GraphEdge, BuildGraphOptions } from "./graph
 export { findRelated } from "./related.js";
 export type { RelatedHit, RelatedOptions } from "./related.js";
 export { queryAsOf } from "./asof.js";
+export {
+  planCapture,
+  deriveTitle,
+  slugify,
+  DEFAULT_CAPTURE_FOLDER,
+  DEFAULT_CAPTURE_TYPE,
+  INBOX_TAG,
+} from "./capture.js";
+export type { CaptureOptions, CapturePlan } from "./capture.js";
 export { KnowledgeBase, type KnowledgeBaseOptions } from "./knowledge-base.js";

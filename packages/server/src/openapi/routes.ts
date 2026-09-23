@@ -39,6 +39,7 @@ export const ROUTES: readonly RouteDef[] = [
   { tool: "link_add", method: "post", path: "/links", style: "body", successStatus: 201 },
   { tool: "concept_supersede", method: "post", path: "/concepts/supersede", style: "body", successStatus: 201 },
   { tool: "concept_as_of", method: "get", path: "/concepts/as-of", style: "query" },
+  { tool: "concept_capture", method: "post", path: "/concepts/capture", style: "body", successStatus: 201 },
 ];
 
 export function routeFor(tools: readonly ToolDefinition[], tool: string): ToolDefinition {

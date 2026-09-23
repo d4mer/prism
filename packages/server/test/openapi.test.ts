@@ -162,6 +162,27 @@ describe("REST registry adapter: full create-read-patch-link-delete cycle (accep
     expect(res.body.error).toMatch(/escapes bundle root/i);
   });
 
+  it("PRISM-52: quick capture over REST files into /inbox and is triageable via a tag-only search", async () => {
+    const first = await request(app)
+      .post("/api/v1/concepts/capture")
+      .send({ text: "Cutover risks\n\nFreeze APO writes before go-live." })
+      .expect(201);
+    expect(first.body.captured).toMatch(/^\/inbox\/\d{4}-\d{2}-\d{2}-cutover-risks\.md$/);
+    const second = await request(app)
+      .post("/api/v1/concepts/capture")
+      .send({ text: "Cutover risks\n\nSecond note." })
+      .expect(201);
+    expect(second.body.captured).toBe(first.body.captured.replace(/\.md$/, "-2.md"));
+
+    // An explicitly empty required query string is a tag-only filter, not "missing".
+    const inbox = await request(app).get("/api/v1/concepts/search").query({ query: "", tags: "inbox" }).expect(200);
+    expect(inbox.body.map((h: { path: string }) => h.path).sort()).toEqual(
+      [first.body.captured, second.body.captured].sort()
+    );
+
+    await request(app).post("/api/v1/concepts/capture").send({ text: "   " }).expect(400);
+  });
+
   it("reading a concept that doesn't exist is a clean 404, not a 500", async () => {
     const res = await request(app).get("/api/v1/concepts/one").query({ path: "/nope.md" }).expect(404);
     expect(res.body.code).toBe("NOT_FOUND");

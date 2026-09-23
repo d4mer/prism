@@ -15,7 +15,15 @@ export function coerceQuery(schema: ZodTypeAny, query: Record<string, unknown>):
   const out: Record<string, unknown> = {};
   for (const [key, fieldSchema] of Object.entries(shape)) {
     const raw = query[key];
-    if (raw === undefined || raw === "") continue;
+    if (raw === undefined) continue;
+    if (raw === "") {
+      // "" normally means "unset" — except for a REQUIRED string field, where
+      // it is a meaningful value: concept_search documents query="" for a
+      // tag/type-only filter (e.g. ?query=&tags=inbox for inbox triage,
+      // PRISM-52), and dropping it turned that into a spurious 400.
+      if (!fieldSchema.isOptional() && unwrap(fieldSchema) instanceof z.ZodString) out[key] = "";
+      continue;
+    }
     out[key] = coerceValue(unwrap(fieldSchema), raw);
   }
   return out;
