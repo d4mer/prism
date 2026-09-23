@@ -39,3 +39,5 @@ export { listOpenItems } from "./open-items.js";
 export type { OpenItem, OpenItemsReport, OpenItemsOptions } from "./open-items.js";
 export { listTemplates, getTemplate, TEMPLATES_DIR } from "./templates.js";
 export type { ConceptTemplate } from "./templates.js";
+export { reviewQueue } from "./review.js";
+export type { ReviewReport, ReviewEntry, ReviewReason, ReviewReasonKind, ReviewOptions } from "./review.js";

@@ -38,7 +38,7 @@ afterEach(async () => {
 });
 
 describe("CORE_TOOLS registry", () => {
-  it("lists exactly the fifteen deterministic operations, correctly classified", () => {
+  it("lists exactly the sixteen deterministic operations, correctly classified", () => {
     const names = [...CORE_TOOLS.map((t) => t.name)].sort();
     expect(names).toEqual(
       [
@@ -57,6 +57,7 @@ describe("CORE_TOOLS registry", () => {
         "changes_since",
         "open_items",
         "concept_template",
+        "review_queue",
       ].sort()
     );
     // Every registry entry is Tier 0/1 — never Tier 2. This is the

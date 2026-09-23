@@ -9,7 +9,7 @@ Bundles follow the [Open Knowledge Format (OKF) v0.1 spec](https://github.com/Go
 **Three ways in, one agent — and a granular tool surface that needs no agent at all:**
 
 - **MCP server** — two tiers of tools over stdio or streamable HTTP, no LLM required to start the server or use the first tier:
-  - **Granular (zero LLM, ever):** `concept_search` / `concept_read` / `concept_list` / `graph_lint` / `concept_related` / `concept_write` / `concept_patch` / `concept_delete` / `link_add` / `concept_supersede` / `concept_as_of` / `concept_capture` / `changes_since` / `open_items` / `concept_template`. A capable calling agent files knowledge itself, one round trip per action — no server-side model involved at any point.
+  - **Granular (zero LLM, ever):** `concept_search` / `concept_read` / `concept_list` / `graph_lint` / `concept_related` / `concept_write` / `concept_patch` / `concept_delete` / `link_add` / `concept_supersede` / `concept_as_of` / `concept_capture` / `changes_since` / `open_items` / `concept_template` / `review_queue`. A capable calling agent files knowledge itself, one round trip per action — no server-side model involved at any point.
   - **Coarse (needs a provider):** `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain`. Convenience for weaker clients — each call drives an internal LLM agent (with the OKF spec in its system prompt) that ends up calling the same granular tools above. `memory_status` is deterministic and needs no provider.
 - **Web UI** — browse the bundle (tree, concept viewer, update log, conformance badge), see the memory as an Obsidian-style **force-directed graph** (drag/pan/zoom, colored by type, sized by connections, orphans ringed red, click to open), and chat with the same agent to test it. Tool calls render inline so you can watch it work.
 - **Query-path replay** — every agent run (query/mutation/chat) records its traversal (searches → reads → writes) as a compact notation, persisted under `<bundle>/.traces/`. The graph view lists recent runs; selecting one replays the path as numbered directed hops over the graph — visited concepts ringed, search hits dotted, everything else faded.
@@ -190,7 +190,7 @@ Open WebUI added **native MCP support in v0.6.31**, over **streamable HTTP only*
 
 1. Add server, URL `http://host:3800/mcp`.
 2. Auth: `None` if the server has no `AUTH_TOKEN` set (open LAN), or `Bearer` with the token in the Key field if it does — the same `AUTH_TOKEN` used everywhere else in this README, checked by the identical middleware every other adapter goes through (see [Auth](#auth)). Don't pick `Bearer` with an empty Key — Prism, like most MCP servers, rejects that immediately rather than treating it as no auth.
-3. Save. Open WebUI discovers the granular tools (`concept_search`, `concept_read`, `concept_list`, `graph_lint`, `concept_related`, `concept_write`, `concept_patch`, `concept_delete`, `link_add`, `concept_supersede`, `concept_as_of`, `concept_capture`, `changes_since`, `open_items`, `concept_template`) via `tools/list` and can call them directly from a chat — no separate LLM hop on Prism's side, since these are plain deterministic registry operations, not the agent-backed `memory_*` tools.
+3. Save. Open WebUI discovers the granular tools (`concept_search`, `concept_read`, `concept_list`, `graph_lint`, `concept_related`, `concept_write`, `concept_patch`, `concept_delete`, `link_add`, `concept_supersede`, `concept_as_of`, `concept_capture`, `changes_since`, `open_items`, `concept_template`, `review_queue`) via `tools/list` and can call them directly from a chat — no separate LLM hop on Prism's side, since these are plain deterministic registry operations, not the agent-backed `memory_*` tools.
 
 **Non-admin users**: Open WebUI restricts registering MCP servers to admins. A user granted the **Direct Tool Servers** permission can add their *own* tool server under Settings → Integrations, but only as an **OpenAPI** connection — the connection type is locked, with no MCP option, for personal servers. Point that at `http://host:3800/api/v1/openapi.json` instead (see [REST API & OpenAPI](#rest-api--openapi-apiv1) below) — same registry operations, same auth, just the REST surface rather than MCP.
 
@@ -216,6 +216,7 @@ POST   /api/v1/concepts/capture              # concept_capture   (just {"text"};
 GET    /api/v1/changes?since=7d             # changes_since     (also: scope, limit; since = ISO date/date-time or 24h/7d/2w)
 GET    /api/v1/items/open                   # open_items        (also: status, owner, scope, overdue_only, limit)
 GET    /api/v1/templates?name=decision      # concept_template  (omit name to list; bundle overrides live in /.templates/<name>.md)
+GET    /api/v1/review                       # review_queue      (also: scope, inbox_days, stale_days, min_confidence, limit)
 ```
 
 The spec itself is at `GET /api/v1/openapi.json`; browse it interactively at `/api/v1/docs`. Adding an operation to the registry adds it to both the REST surface and the spec with no separate edit — see `packages/server/src/openapi/`. Regenerate the static file (e.g. for CI diffing) with `pnpm --filter @prism/server run openapi:generate`. The pre-existing read-only browse endpoints (`/tree`, `/search`, `/log`, `/graph`, ...) keep working unversioned at `/api/*` and are also aliased at `/api/v1/*`.
@@ -251,6 +252,17 @@ prism maintain ./my-bundle --only=repair,consolidate
 
 Exit codes mirror `diff`: `0` no-op (healthy, or nothing stale), `1` changes made (or, for `--dry-run`, changes *would* be made), `2` failure. Output is JSON: `{ dream, embeddings }`, either key present only if its passes were selected.
 
+### Consultant workflow
+
+Tools for someone juggling workshops, workstreams and clients. All of them are deterministic (no model call) and available over MCP, REST and the built-in agent:
+
+- **Capture now, file later.** `concept_capture` takes just the text and files it as `/inbox/YYYY-MM-DD-<slug>.md`, tagged `inbox`. Add `template: "decision"` (or `meeting-note`, `fit-gap`, `requirement`, `interface`, `config-item`) to get that document's structure. `concept_template` lists them, and a bundle can override or add its own in `/.templates/<name>.md`.
+- **Get your bearings.** `changes_since` with `since: "7d"` (or a date) reports what was created, updated, superseded or deleted, optionally for one area with `scope: "/emea"`.
+- **Keep clients and workstreams apart.** `concept_search` takes `scope: "/clients/acme"`. It matches whole folders, so `/clients/acme-corp` never leaks in.
+- **Acronyms.** Add `aliases: ["L2L", "local-to-local"]` to a concept's frontmatter. Either name finds it, and an exact alias match ranks first.
+- **Action log.** Give any concept `status` (open | in_progress | blocked | decided | closed), plus optional `owner` and `due`. `open_items` lists what's unresolved, overdue first, filterable by owner or area.
+- **Weekly tidy-up.** `review_queue` gives one prioritised list: overdue items, inbox captures left untriaged, low-confidence beliefs, and notes left behind while the rest of their folder moved on.
+
 ### Semantic search (optional)
 
 Keyword search (the derived SQLite+FTS index, or the plain scan as a fallback) is the default and requires no configuration. Setting `EMBEDDING_API_BASE_URL` + `EMBEDDING_MODEL` (any OpenAI-compatible `/embeddings` endpoint — OpenAI, Voyage, etc.) turns on hybrid ranking: a query can then surface concepts that share **no literal keywords** with it, the common case for client-specific jargon vs. standard terminology meaning the same thing. Embeddings are generated only by `prism maintain` (never on a search request), are content-hash-gated so an unchanged concept is never re-embedded, and are reported (`embedded` / `failed` / `coverage`) rather than silently assumed — a batch failure shows up in the `prism maintain` output instead of quietly degrading search quality. Leave `EMBEDDING_API_BASE_URL` unset and everything works exactly as it did before — hybrid ranking is strictly additive on top of keyword search, never a replacement for it.
@@ -259,7 +271,7 @@ Keyword search (the derived SQLite+FTS index, or the plain scan as a fallback) i
 
 ```bash
 pnpm install                               # first run on a mounted/FUSE filesystem? see .npmrc — package-import-method=copy avoids an EPERM on install there
-pnpm test                                  # core (231 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, open items, templates, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
+pnpm test                                  # core (238 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, open items, templates, review queue, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
 
 # Manual/exploratory checks — no LLM required for either of these:
 pnpm --filter @prism/server exec tsx scripts/registry-smoke.mts   # CORE_TOOLS registry CRUD round-trip against a throwaway bundle copy

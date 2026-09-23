@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { recordHotDelete, recordHotWrite } from "../agent/hot-memory.js";
-import { normalizeScope, replaceSection, type ChangesReport, type ConceptTemplate, type OpenItemsReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
+import { normalizeScope, replaceSection, type ChangesReport, type ConceptTemplate, type OpenItemsReport, type ReviewReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
 import { BELIEF_SOURCES } from "../okf/temporal.js";
 import { ITEM_STATUSES, RESOLVED_STATUSES } from "../okf/fields.js";
 import { formatTree } from "./format-tree.js";
@@ -603,5 +603,38 @@ export const conceptTemplateTool: ToolDefinition<ConceptTemplateInput, ConceptTe
         ...(t.path ? { path: t.path } : {}),
       })),
     };
+  },
+};
+
+// ── review_queue ─────────────────────────────────────────────────────
+// PRISM-58: a short, prioritised "what should I re-check?" list.
+
+const reviewQueueInput = z.object({
+  scope: z.string().optional().describe('Only review under this bundle directory, e.g. "/emea"'),
+  inbox_days: z.number().nonnegative().optional().describe("Inbox captures older than this many days count as untriaged (default 3)"),
+  stale_days: z.number().positive().optional().describe("Untouched this many days, in a directory with more recent changes, counts as stale (default 90)"),
+  min_confidence: z.number().min(0).max(1).optional().describe("Confidence strictly below this counts as low_confidence (default 0.5)"),
+  limit: z.number().int().positive().optional().describe("Max entries (default 50); counts stay complete"),
+});
+type ReviewQueueInput = z.infer<typeof reviewQueueInput>;
+
+export const reviewQueueTool: ToolDefinition<ReviewQueueInput, ReviewReport> = {
+  name: "review_queue",
+  title: "Review queue",
+  description:
+    "What to re-check, as one prioritised list: overdue open items, quick captures still untriaged in the inbox, low-confidence beliefs, and stale concepts (untouched for stale_days while others in the same directory changed since). Each entry lists its reasons with a human-readable detail; highest priority first. Superseded concepts are never included. Use it for a weekly tidy-up or before a workshop on a given area (scope).",
+  inputSchema: reviewQueueInput,
+  mutates: false,
+  requiresDeliberation: false,
+  async handler(kb, { scope, inbox_days, stale_days, min_confidence, limit }, ctx) {
+    const report = await kb.reviewQueue({
+      scope,
+      inboxDays: inbox_days,
+      staleDays: stale_days,
+      minConfidence: min_confidence,
+      limit,
+    });
+    ctx?.trace?.record("review_queue", scope ?? "", report.entries.map((e) => e.path));
+    return report;
   },
 };

@@ -13,6 +13,7 @@ import { captureCandidates, planCapture, type CaptureOptions } from "./capture.j
 import { changesSince, type ChangesOptions, type ChangesReport } from "./changes.js";
 import { listOpenItems, type OpenItemsOptions, type OpenItemsReport } from "./open-items.js";
 import { getTemplate, listTemplates, type ConceptTemplate } from "./templates.js";
+import { reviewQueue, type ReviewOptions, type ReviewReport } from "./review.js";
 import {
   rebuildSearchIndex as rebuildSearchIndexFile,
   tryIndexedSearch,
@@ -118,6 +119,11 @@ export class KnowledgeBase {
    */
   changesSince(since: string, options?: ChangesOptions): Promise<ChangesReport> {
     return changesSince(this.bundle, since, options);
+  }
+
+  /** PRISM-58: what to re-check — overdue, untriaged, low-confidence, stale. See okf/review.ts. */
+  reviewQueue(options?: ReviewOptions): Promise<ReviewReport> {
+    return reviewQueue(this.bundle, options);
   }
 
   /** PRISM-57: available concept templates (built-ins + bundle /.templates overrides). */
