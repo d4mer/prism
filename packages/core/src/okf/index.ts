@@ -22,3 +22,6 @@ export {
 } from "./capture.js";
 export type { CaptureOptions, CapturePlan } from "./capture.js";
 export { KnowledgeBase, type KnowledgeBaseOptions } from "./knowledge-base.js";
+export { changesSince, resolveSince } from "./changes.js";
+export type { ChangesReport, ChangeEntry, ChangeKind, DeletionEntry, ChangesOptions } from "./changes.js";
+export { normalizeScope, inScope } from "./scope.js";

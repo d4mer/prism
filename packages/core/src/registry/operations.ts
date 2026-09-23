@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { recordHotDelete, recordHotWrite } from "../agent/hot-memory.js";
-import { replaceSection, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
+import { replaceSection, type ChangesReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
 import { BELIEF_SOURCES } from "../okf/temporal.js";
 import { formatTree } from "./format-tree.js";
 import { conceptPathSchema, frontmatterSchema, logSummarySchema } from "./schemas.js";
@@ -482,5 +482,36 @@ export const conceptCaptureTool: ToolDefinition<ConceptCaptureInput, ConceptCapt
     recordHotWrite(c.path);
     ctx?.trace?.record("concept_capture", c.path, [c.path], true);
     return { captured: c.path, title: String(c.frontmatter.title), type: c.frontmatter.type };
+  },
+};
+
+// ── changes_since ────────────────────────────────────────────────────
+// PRISM-53: re-orientation after a context switch, in one call.
+
+const changesSinceInput = z.object({
+  since: z
+    .string()
+    .min(1)
+    .describe("Window start: an ISO date/date-time (2026-09-01, 2026-09-01T09:00:00Z) or a relative window: 24h, 7d, 2w"),
+  scope: z
+    .string()
+    .optional()
+    .describe('Only report changes under this bundle directory, e.g. "/emea/cmo" (directory-aligned: /acme does not match /acme-corp)'),
+  limit: z.number().int().positive().optional().describe("Max entries in 'changes' (default 100); counts stay complete"),
+});
+type ChangesSinceInput = z.infer<typeof changesSinceInput>;
+
+export const changesSinceTool: ToolDefinition<ChangesSinceInput, ChangesReport> = {
+  name: "changes_since",
+  title: "What changed since…",
+  description:
+    "Everything created, updated, superseded or deleted since a point in time, newest first, optionally scoped to a subtree — use it to brief someone returning from another workstream, a weekend or leave (e.g. since:'7d', scope:'/emea'). Each change carries kind (created | updated | changed | superseded), path, title, type and timestamp; superseded ones point at their replacement. 'changed' means the write time is in the window but log.md didn't name the path, so created-vs-updated is unknown. Deletions come from log.md at day granularity. Read the returned paths with concept_read for detail.",
+  inputSchema: changesSinceInput,
+  mutates: false,
+  requiresDeliberation: false,
+  async handler(kb, { since, scope, limit }, ctx) {
+    const report = await kb.changesSince(since, { scope, limit });
+    ctx?.trace?.record("changes_since", since, report.changes.map((c) => c.path));
+    return report;
   },
 };

@@ -10,6 +10,7 @@ import { buildGraph, type GraphData } from "./graph.js";
 import { findRelated, type RelatedHit, type RelatedOptions } from "./related.js";
 import { queryAsOf } from "./asof.js";
 import { captureCandidates, planCapture, type CaptureOptions } from "./capture.js";
+import { changesSince, type ChangesOptions, type ChangesReport } from "./changes.js";
 import {
   rebuildSearchIndex as rebuildSearchIndexFile,
   tryIndexedSearch,
@@ -105,6 +106,16 @@ export class KnowledgeBase {
   async related(path: string, options?: RelatedOptions): Promise<RelatedHit[]> {
     const concept = await this.bundle.readConcept(path);
     return findRelated(this.bundle, concept.path, options);
+  }
+
+  /**
+   * PRISM-53: everything created/updated/superseded/deleted since a point in
+   * time ("2026-09-01", "7d", "24h"...), optionally scoped to a subtree.
+   * Deterministic; see okf/changes.ts for exactly what each source can and
+   * cannot tell us.
+   */
+  changesSince(since: string, options?: ChangesOptions): Promise<ChangesReport> {
+    return changesSince(this.bundle, since, options);
   }
 
   /**
