@@ -13,6 +13,15 @@ export interface ToolContext {
   trace?: TraceRecorder;
   /** Present when the caller wants to know which concept paths were written. */
   filesChanged?: Set<string>;
+  /**
+   * PRISM-27: optimistic-concurrency memory for a multi-step caller (the
+   * internal agent loop, i.e. memory_add/memory_update/maintenance).
+   * concept_read records the version of what it read; a later
+   * write/patch/delete/supersede of that path within the same run is refused
+   * with CONFLICT if another writer changed the file in between, instead of
+   * silently overwriting their change with content based on a stale read.
+   */
+  readVersions?: Map<string, string>;
 }
 
 /**

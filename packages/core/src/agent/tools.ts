@@ -38,11 +38,21 @@ function toolsByName(names: readonly string[], kb: KnowledgeBase, ctx: ToolConte
  * registry/index.ts definition (PRISM-12) — the agent tool loop and every
  * future external adapter are provably driven by the same definitions.
  */
-export function buildReadTools(kb: KnowledgeBase, trace?: TraceRecorder) {
-  return toolsByName(READ_TOOL_NAMES, kb, { trace });
+export function buildReadTools(kb: KnowledgeBase, trace?: TraceRecorder, readVersions?: Map<string, string>) {
+  return toolsByName(READ_TOOL_NAMES, kb, { trace, readVersions });
 }
 
-/** The internal agent's write tools, rendered from the same registry. */
-export function buildWriteTools(kb: KnowledgeBase, filesChanged: Set<string>, trace?: TraceRecorder) {
-  return toolsByName(WRITE_TOOL_NAMES, kb, { trace, filesChanged });
+/**
+ * The internal agent's write tools, rendered from the same registry. Pass
+ * the SAME readVersions map given to buildReadTools so writes are guarded
+ * against changes made by other writers since the agent read a concept
+ * (PRISM-27).
+ */
+export function buildWriteTools(
+  kb: KnowledgeBase,
+  filesChanged: Set<string>,
+  trace?: TraceRecorder,
+  readVersions?: Map<string, string>
+) {
+  return toolsByName(WRITE_TOOL_NAMES, kb, { trace, filesChanged, readVersions });
 }

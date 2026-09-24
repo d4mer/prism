@@ -68,7 +68,11 @@ function sendToolError(res: Response, err: unknown, next: NextFunction): void {
     return;
   }
   if (err instanceof BundleError) {
-    const status = err.code === "NOT_FOUND" ? 404 : 400;
+    // PRISM-27: CONFLICT = changed since read (re-read and retry); LOCKED =
+    // another process held the bundle write lock too long (retry shortly).
+    const status =
+      err.code === "NOT_FOUND" ? 404 : err.code === "CONFLICT" ? 409 : err.code === "LOCKED" ? 503 : 400;
+    if (err.code === "LOCKED") res.setHeader("Retry-After", "5");
     res.status(status).json({ error: err.message, code: err.code });
     return;
   }

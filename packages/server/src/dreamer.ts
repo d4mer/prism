@@ -1,4 +1,4 @@
-import { parseDuration, runDream, type KnowledgeBase } from "@prism/core";
+import { parseDuration, runDream, withMaintenanceLock, type KnowledgeBase } from "@prism/core";
 
 const MIN_INTERVAL_MS = 5 * 60_000;
 
@@ -23,7 +23,13 @@ export function startDreamer(kb: KnowledgeBase): void {
     if (busy) return; // never overlap dreams
     busy = true;
     try {
-      const report = await runDream(kb);
+      // PRISM-27: never overlap a `prism maintain` run from cron (or another server).
+      const outcome = await withMaintenanceLock(kb.bundle, "server dream (DREAM_INTERVAL)", () => runDream(kb));
+      if (!outcome.ran) {
+        console.log(`[prism] dream skipped: ${outcome.reason}`);
+        return;
+      }
+      const report = outcome.result;
       if (report.ran) {
         console.log(
           `[prism] dream complete: ${report.filesChanged?.length ?? 0} file(s) changed — ${truncate(report.summary ?? "", 200)}`

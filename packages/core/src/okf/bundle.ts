@@ -15,6 +15,10 @@ export class BundleError extends Error {
       | "NOT_FOUND"
       | "INVALID_FRONTMATTER"
       | "NOT_MARKDOWN"
+      // PRISM-27: another process held the bundle write lock for too long.
+      | "LOCKED"
+      // PRISM-27: the file changed since the caller read it (lost-update guard).
+      | "CONFLICT"
   ) {
     super(message);
     this.name = "BundleError";

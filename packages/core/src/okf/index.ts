@@ -21,7 +21,7 @@ export {
   INBOX_TAG,
 } from "./capture.js";
 export type { CaptureOptions, CapturePlan, CaptureTemplate } from "./capture.js";
-export { KnowledgeBase, type KnowledgeBaseOptions } from "./knowledge-base.js";
+export { KnowledgeBase, contentVersion, type KnowledgeBaseOptions, type WriteGuard } from "./knowledge-base.js";
 export { changesSince, resolveSince } from "./changes.js";
 export type { ChangesReport, ChangeEntry, ChangeKind, DeletionEntry, ChangesOptions } from "./changes.js";
 export { normalizeScope, inScope } from "./scope.js";
@@ -45,3 +45,5 @@ export { startIndexWatcher, classifyWatchEvent } from "./index-watcher.js";
 export type { IndexWatcher, IndexWatcherOptions, IndexWatchMode } from "./index-watcher.js";
 export { reconcileSearchIndex, searchIndexStatus } from "./search-index.js";
 export type { ReconcileReport, ReconcileOptions, IndexStatus } from "./search-index.js";
+export { acquireLock, withLock, withMaintenanceLock, staleReason, lockDir, LockBusyError, LOCK_DEFAULTS } from "./locks.js";
+export type { LockName, LockHolder, LockHandle, LockOptions, MaintenanceOutcome } from "./locks.js";

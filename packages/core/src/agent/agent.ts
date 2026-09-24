@@ -150,6 +150,7 @@ export async function runMutation(
   const ctx = await promptContext(kb, "mutate");
   const recorder = new TraceRecorder();
   const filesChanged = new Set<string>();
+  const readVersions = new Map<string, string>();
   let modelChain: string[] = [];
   try {
     const resolved = await resolveAgentModel(options, "mutate");
@@ -158,7 +159,12 @@ export async function runMutation(
       model: resolved.model,
       system: buildSystemPrompt(ctx),
       prompt: instruction,
-      tools: { ...buildReadTools(kb, recorder), ...buildWriteTools(kb, filesChanged, recorder) },
+      // PRISM-27: one shared map, so a concept this run read is only
+      // overwritten if nobody else changed it in the meantime.
+      tools: {
+        ...buildReadTools(kb, recorder, readVersions),
+        ...buildWriteTools(kb, filesChanged, recorder, readVersions),
+      },
       stopWhen: stepCountIs(MAX_STEPS),
       temperature: 0.2,
     });
@@ -197,6 +203,7 @@ export async function streamChat(
   const ctx = await promptContext(kb, "chat");
   const recorder = new TraceRecorder();
   const filesChanged = new Set<string>();
+  const readVersions = new Map<string, string>();
   let modelChain: string[] = [];
   // The user turn that started this run, for the trace record.
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
@@ -215,7 +222,12 @@ export async function streamChat(
       model: resolved.model,
       system: buildSystemPrompt(ctx),
       messages,
-      tools: { ...buildReadTools(kb, recorder), ...buildWriteTools(kb, filesChanged, recorder) },
+      // PRISM-27: one shared map, so a concept this run read is only
+      // overwritten if nobody else changed it in the meantime.
+      tools: {
+        ...buildReadTools(kb, recorder, readVersions),
+        ...buildWriteTools(kb, filesChanged, recorder, readVersions),
+      },
       stopWhen: stepCountIs(MAX_STEPS),
       onFinish: async ({ text, totalUsage }) => {
         // Persist only turns that actually touched the bundle.

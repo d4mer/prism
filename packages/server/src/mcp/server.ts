@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { CORE_TOOLS, KnowledgeBase, runMutation, runQueryCached, type MutationOutcome, type ToolDefinition } from "@prism/core";
+import { CORE_TOOLS, KnowledgeBase, runMutation, runQueryCached, withMaintenanceLock, type MutationOutcome, type ToolDefinition } from "@prism/core";
 import { buildSeedMemory, seedInstructions } from "./seed.js";
 
 /**
@@ -263,7 +263,19 @@ export async function buildMcpServer(kb: KnowledgeBase): Promise<McpServer> {
         `or remove the link if the target is gone.\n${brokenList}\n\n` +
         `Follow the enrich / link-both-ways rules. Read concepts before editing.`;
 
-      const outcome = await runMutation(kb, instruction);
+      // PRISM-27: repair is maintenance; never overlap another maintenance run.
+      const locked = await withMaintenanceLock(kb.bundle, "memory_maintain (MCP)", () => runMutation(kb, instruction));
+      if (!locked.ran) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Another maintenance run is in progress, so nothing was changed. ${locked.reason}. Try again once it finishes.`,
+            },
+          ],
+        };
+      }
+      const outcome = locked.result;
       await refreshSeed();
       if (!outcome.ok) return mutationOutcomeResponse(outcome);
       const { summary, filesChanged } = outcome.result;

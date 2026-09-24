@@ -1,6 +1,9 @@
 import path from "node:path";
 import { simpleGit, type SimpleGit } from "simple-git";
-import { Bundle } from "./bundle.js";
+import { createHash } from "node:crypto";
+import { promises as fs } from "node:fs";
+import { Bundle, BundleError } from "./bundle.js";
+import { LockBusyError, withLock } from "./locks.js";
 import { pruneEmptyDirs, regenerateIndexChain } from "./indexer.js";
 import { appendLog, readLog } from "./logger.js";
 import { searchBundle, listTypes, type SearchOptions } from "./search.js";
@@ -22,6 +25,7 @@ import {
   type ReconcileOptions,
   type ReconcileReport,
   tryIndexedSearch,
+  ensureBundleGitignore,
   indexUpsertConcept,
   indexRemoveConcept,
 } from "./search-index.js";
@@ -35,9 +39,26 @@ import type {
   TreeNode,
 } from "./types.js";
 
+/** sha256 of a concept file's exact bytes — the version token for optimistic concurrency (PRISM-27). */
+export function contentVersion(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
+
+/**
+ * PRISM-27: optional guard against lost updates. When set, the write only
+ * happens if the file on disk still has this version (see contentVersion),
+ * i.e. nobody changed it since the caller read it. Otherwise BundleError
+ * CONFLICT, and nothing is written.
+ */
+export interface WriteGuard {
+  expectedVersion?: string;
+}
+
 export interface KnowledgeBaseOptions {
   /** Commit after each mutation. Requires the bundle to be inside a git repo. */
   gitAutocommit?: boolean;
+  /** PRISM-27: how long a write waits for another process's write lock (default 15s). */
+  writeLockWaitMs?: number;
 }
 
 /**
@@ -51,6 +72,7 @@ export class KnowledgeBase {
   private mutationQueue: Promise<unknown> = Promise.resolve();
   /** PRISM-36: set by startIndexWatcher so status can report how freshness is maintained. */
   private indexWatchMode: "watch" | "poll" | "off" = "off";
+  private gitignoreEnsured = false;
 
   constructor(bundleRoot: string, private readonly options: KnowledgeBaseOptions = {}) {
     this.bundle = new Bundle(bundleRoot);
@@ -183,9 +205,11 @@ export class KnowledgeBase {
     conceptPath: string,
     frontmatter: ConceptFrontmatter,
     body: string,
-    logSummary: string
+    logSummary: string,
+    guard?: WriteGuard
   ): Promise<Concept> {
-    return this.enqueue(async () => {
+    return this.enqueueWrite(async () => {
+      await this.checkGuard(conceptPath, guard);
       const existed = await this.bundle.exists(conceptPath);
       const concept = await this.bundle.writeConcept(conceptPath, frontmatter, body);
       await this.afterMutation(concept.path, existed ? "Update" : "Creation", logSummary, concept);
@@ -196,17 +220,20 @@ export class KnowledgeBase {
   patchConcept(
     conceptPath: string,
     changes: Parameters<Bundle["patchConcept"]>[1],
-    logSummary: string
+    logSummary: string,
+    guard?: WriteGuard
   ): Promise<Concept> {
-    return this.enqueue(async () => {
+    return this.enqueueWrite(async () => {
+      await this.checkGuard(conceptPath, guard);
       const concept = await this.bundle.patchConcept(conceptPath, changes);
       await this.afterMutation(concept.path, "Update", logSummary, concept);
       return concept;
     });
   }
 
-  deleteConcept(conceptPath: string, logSummary: string): Promise<void> {
-    return this.enqueue(async () => {
+  deleteConcept(conceptPath: string, logSummary: string, guard?: WriteGuard): Promise<void> {
+    return this.enqueueWrite(async () => {
+      await this.checkGuard(conceptPath, guard);
       const canonical = this.bundle.toBundlePath(conceptPath);
       await this.bundle.deleteConcept(canonical);
       await this.afterMutation(canonical, "Deletion", logSummary);
@@ -229,9 +256,12 @@ export class KnowledgeBase {
     newPath: string,
     newFrontmatter: ConceptFrontmatter,
     newBody: string,
-    logSummary: string
+    logSummary: string,
+    /** Guards the OLD concept (the one being patched with superseded_by). */
+    guard?: WriteGuard
   ): Promise<{ old: Concept; new: Concept }> {
-    return this.enqueue(async () => {
+    return this.enqueueWrite(async () => {
+      await this.checkGuard(oldPath, guard);
       // Confirms old exists (throws BundleError NOT_FOUND otherwise) and
       // resolves it to its canonical path.
       const oldConcept = await this.bundle.readConcept(oldPath);
@@ -288,7 +318,7 @@ export class KnowledgeBase {
   async capture(options: CaptureOptions): Promise<Concept> {
     const template = options.template ? await getTemplate(this.bundle, options.template) : undefined;
     const plan = planCapture(options, template);
-    return this.enqueue(async () => {
+    return this.enqueueWrite(async () => {
       let target = "";
       for (const candidate of captureCandidates(plan.stem)) {
         if (!(await this.bundle.exists(candidate))) {
@@ -306,6 +336,48 @@ export class KnowledgeBase {
       );
       return concept;
     });
+  }
+
+  /**
+   * PRISM-27: a bundle mutation. Serialized in-process by the queue AND
+   * across processes by the bundle write lock (a `prism maintain` run, a
+   * second server), held only for this one mutation's critical section.
+   * Waits up to 15s for another writer, then fails loudly with LOCKED; a
+   * write is never silently dropped.
+   */
+  private enqueueWrite<T>(fn: () => Promise<T>): Promise<T> {
+    return this.enqueue(async () => {
+      if (this.git && !this.gitignoreEnsured) {
+        // Lock files live in .prism/; never let `git add .` pick them up.
+        await ensureBundleGitignore(this.bundle);
+        this.gitignoreEnsured = true;
+      }
+      try {
+        return await withLock(this.bundle, "write", fn, { purpose: "write", waitMs: this.options.writeLockWaitMs });
+      } catch (err) {
+        if (err instanceof LockBusyError) throw new BundleError(err.message, "LOCKED");
+        throw err;
+      }
+    });
+  }
+
+  /** PRISM-27: refuse a guarded write when the file changed since the caller read it. */
+  private async checkGuard(conceptPath: string, guard?: WriteGuard): Promise<void> {
+    if (!guard?.expectedVersion) return;
+    const canonical = this.bundle.toBundlePath(conceptPath);
+    let raw: string | undefined;
+    try {
+      raw = await fs.readFile(this.bundle.resolve(canonical), "utf-8");
+    } catch {
+      raw = undefined;
+    }
+    if (raw === undefined || contentVersion(raw) !== guard.expectedVersion) {
+      throw new BundleError(
+        `${canonical} was ${raw === undefined ? "deleted" : "changed"} by another writer since it was read — ` +
+          `read it again and re-apply your change (nothing was written)`,
+        "CONFLICT"
+      );
+    }
   }
 
   private enqueue<T>(fn: () => Promise<T>): Promise<T> {

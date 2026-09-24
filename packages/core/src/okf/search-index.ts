@@ -359,7 +359,7 @@ export async function indexRemoveConcept(bundle: Bundle, conceptPath: string): P
  * is already present. Written even if the bundle isn't a git repo (yet) —
  * cheap insurance for when it becomes one (PRISM-39).
  */
-async function ensureBundleGitignore(bundle: Bundle): Promise<void> {
+export async function ensureBundleGitignore(bundle: Bundle): Promise<void> {
   const gitignorePath = path.join(bundle.root, ".gitignore");
   const entry = `${INDEX_DIRNAME}/`;
   let existing = "";

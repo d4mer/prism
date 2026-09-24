@@ -1,11 +1,23 @@
 import { z } from "zod";
 import { recordHotDelete, recordHotWrite } from "../agent/hot-memory.js";
-import { normalizeScope, replaceSection, type ChangesReport, type ConceptTemplate, type OpenItemsReport, type ReviewReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
+import { contentVersion, normalizeScope, replaceSection, type ChangesReport, type ConceptTemplate, type OpenItemsReport, type ReviewReport, type LintReport, type RelatedHit, type SearchHit } from "../okf/index.js";
 import { BELIEF_SOURCES } from "../okf/temporal.js";
 import { ITEM_STATUSES, RESOLVED_STATUSES } from "../okf/fields.js";
 import { formatTree } from "./format-tree.js";
 import { conceptPathSchema, frontmatterSchema, logSummarySchema } from "./schemas.js";
-import type { ToolDefinition } from "./types.js";
+import type { ToolContext, ToolDefinition } from "./types.js";
+import type { KnowledgeBase } from "../okf/index.js";
+
+/** PRISM-27: the write guard for `path` if this run read it earlier. */
+function guardFor(kb: KnowledgeBase, ctx: ToolContext | undefined, path: string) {
+  const expectedVersion = ctx?.readVersions?.get(kb.bundle.toBundlePath(path));
+  return expectedVersion ? { expectedVersion } : undefined;
+}
+
+/** PRISM-27: after a successful write, what this run "has read" is what it just wrote. */
+function remember(ctx: ToolContext | undefined, concept: { path: string; raw: string }) {
+  ctx?.readVersions?.set(concept.path, contentVersion(concept.raw));
+}
 
 // ── concept_search ───────────────────────────────────────────────────
 
@@ -81,6 +93,7 @@ export const conceptReadTool: ToolDefinition<ConceptReadInput, ConceptReadOutput
   requiresDeliberation: false,
   async handler(kb, { path }, ctx) {
     const c = await kb.readConcept(path);
+    remember(ctx, c);
     ctx?.trace?.record("concept_read", c.path, [c.path]);
     return { path: c.path, frontmatter: c.frontmatter, body: c.body };
   },
@@ -189,7 +202,8 @@ export const conceptWriteTool: ToolDefinition<ConceptWriteInput, ConceptWriteOut
   mutates: true,
   requiresDeliberation: false,
   async handler(kb, { path, frontmatter, body, log_summary }, ctx) {
-    const c = await kb.writeConcept(path, frontmatter, body, log_summary);
+    const c = await kb.writeConcept(path, frontmatter, body, log_summary, guardFor(kb, ctx, path));
+    remember(ctx, c);
     ctx?.filesChanged?.add(c.path);
     recordHotWrite(c.path);
     ctx?.trace?.record("concept_write", c.path, [c.path], true);
@@ -247,8 +261,10 @@ export const conceptPatchTool: ToolDefinition<ConceptPatchInput, ConceptPatchOut
           : undefined,
         replaceBody: replace_body,
       },
-      log_summary
+      log_summary,
+      guardFor(kb, ctx, path)
     );
+    remember(ctx, c);
     ctx?.filesChanged?.add(c.path);
     recordHotWrite(c.path);
     ctx?.trace?.record("concept_patch", c.path, [c.path], true);
@@ -279,7 +295,8 @@ export const conceptDeleteTool: ToolDefinition<ConceptDeleteInput, ConceptDelete
   mutates: true,
   requiresDeliberation: false,
   async handler(kb, { path, log_summary }, ctx) {
-    await kb.deleteConcept(path, log_summary);
+    await kb.deleteConcept(path, log_summary, guardFor(kb, ctx, path));
+    ctx?.readVersions?.delete(kb.bundle.toBundlePath(path));
     ctx?.filesChanged?.add(path);
     recordHotDelete(path);
     ctx?.trace?.record("concept_delete", path, [path], true);
@@ -356,7 +373,13 @@ export const linkAddTool: ToolDefinition<LinkAddInput, LinkAddOutput> = {
     const existingRelated = extractSection(src.body, "Related");
     const mergedContent = existingRelated ? `${existingRelated}\n- ${markdown}` : `- ${markdown}`;
     const newBody = replaceSection(src.body, "Related", mergedContent);
-    const c = await kb.patchConcept(src.path, { replaceBody: newBody }, log_summary);
+    // PRISM-27: this is a read-modify-write of src's whole body, so it is
+    // guarded by the version link_add itself just read. A concurrent edit to
+    // src makes it fail with CONFLICT instead of being overwritten.
+    const c = await kb.patchConcept(src.path, { replaceBody: newBody }, log_summary, {
+      expectedVersion: contentVersion(src.raw),
+    });
+    remember(ctx, c);
     ctx?.filesChanged?.add(c.path);
     recordHotWrite(c.path);
     ctx?.trace?.record("link_add", `${src.path} -> ${tgt.path}`, [c.path], true);
@@ -400,8 +423,11 @@ export const conceptSupersedeTool: ToolDefinition<ConceptSupersedeInput, Concept
       new_path,
       frontmatter,
       body,
-      log_summary
+      log_summary,
+      guardFor(kb, ctx, old_path)
     );
+    remember(ctx, oldConcept);
+    remember(ctx, newConcept);
     ctx?.filesChanged?.add(oldConcept.path);
     ctx?.filesChanged?.add(newConcept.path);
     recordHotWrite(oldConcept.path);

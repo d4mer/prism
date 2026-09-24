@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { KnowledgeBase } from "../okf/index.js";
+import { KnowledgeBase, withMaintenanceLock } from "../okf/index.js";
 import { runDream, DREAM_PASSES, type DreamPass, type DreamReport } from "./dream.js";
 import { generateEmbeddings, type EmbeddingsReport } from "../okf/embeddings.js";
 
@@ -76,7 +76,9 @@ export function parseMaintainArgs(argv: string[]): ParsedMaintainArgs {
 export interface MaintainCliResult {
   /**
    * Exit code convention (mirrors the well-known `diff` shape):
-   *   0 = no-op (healthy bundle, or a dry-run that found nothing to do)
+   *   0 = no-op (healthy bundle, a dry-run that found nothing to do, or
+   *       skipped because another maintenance run holds the lock, PRISM-27;
+   *       the output then says {skipped:true, holder})
    *   1 = changes made (or, for a dry-run, changes WOULD be made)
    *   2 = failure (bad arguments, bad bundle path, the agent run itself
    *       failed, or an embedding batch failed)
@@ -141,8 +143,29 @@ export async function runMaintainCli(argv: string[]): Promise<MaintainCliResult>
     const dreamPasses = selected.filter((p): p is DreamPass => p === "repair" || p === "consolidate");
     const embedSelected = selected.includes("embed");
 
-    const dream = dreamPasses.length > 0 ? await runDream(kb, {}, undefined, { passes: dreamPasses, dryRun }) : undefined;
-    const embeddings = embedSelected ? await generateEmbeddings(kb.bundle, { dryRun }) : undefined;
+    const work = async () => {
+      const dream = dreamPasses.length > 0 ? await runDream(kb, {}, undefined, { passes: dreamPasses, dryRun }) : undefined;
+      const embeddings = embedSelected ? await generateEmbeddings(kb.bundle, { dryRun }) : undefined;
+      return { dream, embeddings };
+    };
+
+    // PRISM-27: a real run holds the bundle's maintenance lock, so two runs
+    // (overlapping cron slots, a cron run plus the server's DREAM_INTERVAL)
+    // never execute at once. A dry-run only reads, so it takes no lock. A
+    // skipped run exits 0: nothing was done, and nothing failed.
+    if (!dryRun) {
+      const outcome = await withMaintenanceLock(kb.bundle, `prism maintain ${selected.join(",")}`, work);
+      if (!outcome.ran) {
+        return {
+          exitCode: 0,
+          output: JSON.stringify({ skipped: true, reason: outcome.reason, holder: outcome.holder }, null, 2),
+        };
+      }
+      const { dream, embeddings } = outcome.result;
+      const exitCode = Math.max(dream ? exitCodeFor(dream) : 0, embeddings ? embeddingsExitCodeFor(embeddings) : 0);
+      return { exitCode, output: JSON.stringify({ dream, embeddings }, null, 2) };
+    }
+    const { dream, embeddings } = await work();
 
     const exitCode = Math.max(dream ? exitCodeFor(dream) : 0, embeddings ? embeddingsExitCodeFor(embeddings) : 0);
     return { exitCode, output: JSON.stringify({ dream, embeddings }, null, 2) };
