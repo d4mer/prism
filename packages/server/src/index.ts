@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
-import { KnowledgeBase, resolveFallbackConfig, resolveModelConfig } from "@prism/core";
+import { KnowledgeBase, parseDuration, resolveFallbackConfig, resolveModelConfig, startIndexWatcher } from "@prism/core";
 import swaggerUi from "swagger-ui-express";
 import { mcpRouter } from "./mcp/http.js";
 import { browseRouter } from "./api/browse.js";
@@ -122,4 +122,13 @@ app.listen(port, host, () => {
   // exposed" — this is the moment something actually checks that.
   const warning = exposureWarning(host, authToken, port);
   if (warning) console.warn(warning);
+
+  // PRISM-36: keep the derived search index following out-of-band edits
+  // (editor, git pull). Startup reconcile first, then watch; falls back to
+  // polling. INDEX_WATCH=false forces polling; INDEX_POLL_INTERVAL (e.g. 60s)
+  // tunes it. A no-op until an index exists (search scans files until then).
+  const pollIntervalMs = parseDuration(process.env.INDEX_POLL_INTERVAL) ?? undefined;
+  startIndexWatcher(kb, { watch: process.env.INDEX_WATCH !== "false", pollIntervalMs }).catch((err) =>
+    console.error(`[prism] search index watcher failed to start: ${(err as Error).message}`)
+  );
 });

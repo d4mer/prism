@@ -44,6 +44,11 @@ export function browseRouter(kb: KnowledgeBase): Router {
     res.json(await kb.validate());
   });
 
+  // PRISM-36: search-index freshness (for the health dashboard, PRISM-33).
+  router.get("/index/status", async (_req, res) => {
+    res.json(await kb.indexStatus());
+  });
+
   router.get("/graph", async (req, res) => {
     const includeHistory = req.query.includeHistory === "true";
     res.json(await kb.graph({ includeHistory }));

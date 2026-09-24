@@ -41,3 +41,7 @@ export { listTemplates, getTemplate, TEMPLATES_DIR } from "./templates.js";
 export type { ConceptTemplate } from "./templates.js";
 export { reviewQueue } from "./review.js";
 export type { ReviewReport, ReviewEntry, ReviewReason, ReviewReasonKind, ReviewOptions } from "./review.js";
+export { startIndexWatcher, classifyWatchEvent } from "./index-watcher.js";
+export type { IndexWatcher, IndexWatcherOptions, IndexWatchMode } from "./index-watcher.js";
+export { reconcileSearchIndex, searchIndexStatus } from "./search-index.js";
+export type { ReconcileReport, ReconcileOptions, IndexStatus } from "./search-index.js";

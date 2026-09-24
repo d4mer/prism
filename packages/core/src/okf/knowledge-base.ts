@@ -16,6 +16,11 @@ import { getTemplate, listTemplates, type ConceptTemplate } from "./templates.js
 import { reviewQueue, type ReviewOptions, type ReviewReport } from "./review.js";
 import {
   rebuildSearchIndex as rebuildSearchIndexFile,
+  reconcileSearchIndex as reconcileSearchIndexFile,
+  searchIndexStatus,
+  type IndexStatus,
+  type ReconcileOptions,
+  type ReconcileReport,
   tryIndexedSearch,
   indexUpsertConcept,
   indexRemoveConcept,
@@ -44,6 +49,8 @@ export class KnowledgeBase {
   readonly bundle: Bundle;
   private readonly git: SimpleGit | null;
   private mutationQueue: Promise<unknown> = Promise.resolve();
+  /** PRISM-36: set by startIndexWatcher so status can report how freshness is maintained. */
+  private indexWatchMode: "watch" | "poll" | "off" = "off";
 
   constructor(bundleRoot: string, private readonly options: KnowledgeBaseOptions = {}) {
     this.bundle = new Bundle(bundleRoot);
@@ -148,6 +155,26 @@ export class KnowledgeBase {
    */
   rebuildSearchIndex(): Promise<{ count: number }> {
     return this.enqueue(() => rebuildSearchIndexFile(this.bundle));
+  }
+
+  /**
+   * PRISM-36: bring the derived index back in line with the files after
+   * out-of-band edits (editor, git pull). Content-hash based: unchanged
+   * files are never rewritten. Runs through the mutation queue so it can't
+   * interleave with an in-band write. No-op (indexed:false) without an index.
+   */
+  reconcileSearchIndex(options?: ReconcileOptions): Promise<ReconcileReport> {
+    return this.enqueue(() => reconcileSearchIndexFile(this.bundle, options));
+  }
+
+  /** PRISM-36: index freshness for status endpoints (read-only, dry-run diff). */
+  async indexStatus(): Promise<IndexStatus & { watcher: "watch" | "poll" | "off" }> {
+    return { ...(await searchIndexStatus(this.bundle)), watcher: this.indexWatchMode };
+  }
+
+  /** @internal Called by startIndexWatcher. */
+  setIndexWatchMode(mode: "watch" | "poll" | "off"): void {
+    this.indexWatchMode = mode;
   }
 
   // ── Mutations (serialized; auto index + log + optional commit) ──────

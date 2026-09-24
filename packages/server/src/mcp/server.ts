@@ -189,7 +189,12 @@ export async function buildMcpServer(kb: KnowledgeBase): Promise<McpServer> {
       inputSchema: {},
     },
     async () => {
-      const [report, lint, types] = await Promise.all([kb.validate(), kb.lint(), kb.listTypes()]);
+      const [report, lint, types, index] = await Promise.all([
+        kb.validate(),
+        kb.lint(),
+        kb.listTypes(),
+        kb.indexStatus(),
+      ]);
       return {
         content: [
           {
@@ -208,6 +213,8 @@ export async function buildMcpServer(kb: KnowledgeBase): Promise<McpServer> {
                   brokenLinks: lint.brokenLinks.length,
                   healthy: lint.healthy,
                 },
+                // PRISM-36: whether the derived search index matches the files.
+                searchIndex: index,
               },
               null,
               2

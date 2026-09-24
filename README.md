@@ -267,11 +267,15 @@ Tools for someone juggling workshops, workstreams and clients. All of them are d
 
 Keyword search (the derived SQLite+FTS index, or the plain scan as a fallback) is the default and requires no configuration. Setting `EMBEDDING_API_BASE_URL` + `EMBEDDING_MODEL` (any OpenAI-compatible `/embeddings` endpoint — OpenAI, Voyage, etc.) turns on hybrid ranking: a query can then surface concepts that share **no literal keywords** with it, the common case for client-specific jargon vs. standard terminology meaning the same thing. Embeddings are generated only by `prism maintain` (never on a search request), are content-hash-gated so an unchanged concept is never re-embedded, and are reported (`embedded` / `failed` / `coverage`) rather than silently assumed — a batch failure shows up in the `prism maintain` output instead of quietly degrading search quality. Leave `EMBEDDING_API_BASE_URL` unset and everything works exactly as it did before — hybrid ranking is strictly additive on top of keyword search, never a replacement for it.
 
+### Editing files outside Prism
+
+Concepts are plain markdown, so edit them in Obsidian or VS Code, or `git pull` a colleague's changes. Nothing needs restarting. The search index checks the files against content hashes: once at startup (catching anything changed while Prism was down), then continuously through a file watcher. A burst of changes such as a large checkout is batched into one reindex. Unchanged files are never rewritten, and a periodic safety pass covers setups where file events don't arrive. `GET /api/v1/index/status` (also inside `memory_status`) shows whether the index matches the files right now. Where the watcher can't work, `INDEX_WATCH=false` switches to polling every `INDEX_POLL_INTERVAL` (default `60s`).
+
 ## Tests
 
 ```bash
 pnpm install                               # first run on a mounted/FUSE filesystem? see .npmrc — package-import-method=copy avoids an EPERM on install there
-pnpm test                                  # core (238 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, open items, templates, review queue, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
+pnpm test                                  # core (248 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, open items, templates, review queue, index freshness under external edits, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
 
 # Manual/exploratory checks — no LLM required for either of these:
 pnpm --filter @prism/server exec tsx scripts/registry-smoke.mts   # CORE_TOOLS registry CRUD round-trip against a throwaway bundle copy

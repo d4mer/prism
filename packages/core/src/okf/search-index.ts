@@ -547,3 +547,159 @@ export async function tryIndexedSearch(
     db?.close();
   }
 }
+
+// ── PRISM-36: keep the index honest under out-of-band edits ───────────
+//
+// Concepts are plain files: people edit them in Obsidian or VS Code, pull
+// them with git, or write them from another tool. In-band writes already
+// maintain the index incrementally (afterMutation). Reconciliation covers
+// everything else by comparing each file's content hash against the stored
+// content_hash:
+//   - new file on disk, no row  -> added
+//   - hash differs              -> updated (re-parsed, re-linked; its
+//                                  embedding goes stale via embedding_hash,
+//                                  so semantic scoring skips it until the
+//                                  next `prism maintain --embed`)
+//   - row with no file          -> removed
+//   - hash equal                -> untouched (never rewritten)
+
+export interface ReconcileReport {
+  /** False when there is no index to reconcile (search is scanning the files directly, so it is never stale). */
+  indexed: boolean;
+  added: string[];
+  updated: string[];
+  removed: string[];
+  unchanged: number;
+  dryRun: boolean;
+  durationMs: number;
+}
+
+export interface ReconcileOptions {
+  /** Only these bundle paths (from a file watcher). Omit for a full pass. */
+  paths?: string[];
+  /** Report what would change without touching the index (used for status). */
+  dryRun?: boolean;
+}
+
+async function readRawIfPresent(bundle: Bundle, bundlePath: string): Promise<string | undefined> {
+  try {
+    return await fs.readFile(bundle.resolve(bundlePath), "utf-8");
+  } catch {
+    return undefined;
+  }
+}
+
+export async function reconcileSearchIndex(bundle: Bundle, options: ReconcileOptions = {}): Promise<ReconcileReport> {
+  const started = Date.now();
+  const empty = (indexed: boolean): ReconcileReport => ({
+    indexed,
+    added: [],
+    updated: [],
+    removed: [],
+    unchanged: 0,
+    dryRun: !!options.dryRun,
+    durationMs: Date.now() - started,
+  });
+  if (!(await indexExists(bundle))) return empty(false);
+
+  const db = options.dryRun ? new DatabaseSync(indexPath(bundle), { readOnly: true }) : openForWrite(bundle);
+  try {
+    const stored = new Map(
+      (db.prepare(`SELECT path, content_hash FROM concepts`).all() as { path: string; content_hash: string }[]).map(
+        (r) => [r.path, r.content_hash]
+      )
+    );
+
+    // Which paths to look at: the watcher's list, or everything on disk plus
+    // everything the index remembers (so deletions are seen).
+    let candidates: string[];
+    if (options.paths) {
+      candidates = [...new Set(options.paths)];
+    } else {
+      candidates = [...new Set([...(await bundle.listConceptPaths()), ...stored.keys()])];
+    }
+
+    const report = empty(true);
+    const upserts: Concept[] = [];
+    for (const p of candidates.sort()) {
+      const raw = await readRawIfPresent(bundle, p);
+      if (raw === undefined) {
+        if (stored.has(p)) report.removed.push(p);
+        continue;
+      }
+      const hash = createHash("sha256").update(raw).digest("hex");
+      const known = stored.get(p);
+      if (known === hash) {
+        report.unchanged++;
+        continue;
+      }
+      try {
+        const { frontmatter, body } = parseDoc(raw);
+        upserts.push({ path: p, frontmatter: frontmatter as ConceptFrontmatter, body, raw });
+        (known === undefined ? report.added : report.updated).push(p);
+      } catch {
+        // Unparseable right now (e.g. an editor mid-save): leave the old row
+        // alone; the next change event or pass will pick it up.
+      }
+    }
+
+    if (!options.dryRun && (upserts.length > 0 || report.removed.length > 0)) {
+      const stmts = prepareWriteStatements(db);
+      db.exec("BEGIN");
+      try {
+        for (const c of upserts) upsertRow(stmts, c);
+        for (const p of report.removed) removeRow(stmts, p);
+        db.exec("COMMIT");
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    }
+    if (!options.dryRun && !options.paths) {
+      db.prepare(`INSERT INTO meta (key, value) VALUES ('reconciled_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
+        new Date().toISOString()
+      );
+    }
+    report.durationMs = Date.now() - started;
+    return report;
+  } finally {
+    db.close();
+  }
+}
+
+export interface IndexStatus {
+  /** Whether a derived index exists. Without one, search scans the files and is always current. */
+  indexed: boolean;
+  concepts?: number;
+  rebuilt_at?: string;
+  reconciled_at?: string;
+  /** Files whose content differs from the index right now (dry-run reconcile). 0 = fresh. */
+  pending_changes: number;
+  stale: boolean;
+  pending_sample?: string[];
+}
+
+/** Cheap, read-only freshness check for status endpoints. */
+export async function searchIndexStatus(bundle: Bundle): Promise<IndexStatus> {
+  if (!(await indexExists(bundle))) return { indexed: false, pending_changes: 0, stale: false };
+  const dry = await reconcileSearchIndex(bundle, { dryRun: true });
+  const db = new DatabaseSync(indexPath(bundle), { readOnly: true });
+  try {
+    const count = (db.prepare(`SELECT COUNT(*) AS n FROM concepts`).get() as { n: number }).n;
+    const meta = new Map(
+      (db.prepare(`SELECT key, value FROM meta`).all() as { key: string; value: string }[]).map((r) => [r.key, r.value])
+    );
+    const pending = [...dry.added, ...dry.updated, ...dry.removed];
+    return {
+      indexed: true,
+      concepts: count,
+      rebuilt_at: meta.get("rebuilt_at"),
+      reconciled_at: meta.get("reconciled_at"),
+      pending_changes: pending.length,
+      stale: pending.length > 0,
+      ...(pending.length > 0 ? { pending_sample: pending.slice(0, 10) } : {}),
+    };
+  } finally {
+    db.close();
+  }
+}
