@@ -6,6 +6,7 @@ import cors from "cors";
 import { KnowledgeBase, parseDuration, resolveFallbackConfig, resolveModelConfig, startIndexWatcher } from "@prism/core";
 import swaggerUi from "swagger-ui-express";
 import { mcpRouter } from "./mcp/http.js";
+import { getSeedMemory } from "./mcp/seed.js";
 import { browseRouter } from "./api/browse.js";
 import { chatRouter } from "./api/chat.js";
 import { registryRestRouter } from "./api/registry-rest.js";
@@ -128,7 +129,14 @@ app.listen(port, host, () => {
   // polling. INDEX_WATCH=false forces polling; INDEX_POLL_INTERVAL (e.g. 60s)
   // tunes it. A no-op until an index exists (search scans files until then).
   const pollIntervalMs = parseDuration(process.env.INDEX_POLL_INTERVAL) ?? undefined;
-  startIndexWatcher(kb, { watch: process.env.INDEX_WATCH !== "false", pollIntervalMs }).catch((err) =>
-    console.error(`[prism] search index watcher failed to start: ${(err as Error).message}`)
-  );
+  // PRISM-59: heal folder husks once at startup (writes only prune their own
+  // folder chain now), build the index if the bundle is big enough to need
+  // one, then warm the MCP overview so the first tool call doesn't pay for it.
+  kb.tidy()
+    .then((removed) => removed.length > 0 && console.log(`[prism] removed ${removed.length} empty folder(s): ${removed.join(", ")}`))
+    .catch((err) => console.error(`[prism] startup tidy failed: ${(err as Error).message}`))
+    .then(() => startIndexWatcher(kb, { watch: process.env.INDEX_WATCH !== "false", pollIntervalMs }))
+    .catch((err) => console.error(`[prism] search index watcher failed to start: ${(err as Error).message}`))
+    .then(() => getSeedMemory(kb))
+    .catch((err) => console.error(`[prism] seed warm-up failed: ${(err as Error).message}`));
 });

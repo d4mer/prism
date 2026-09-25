@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CORE_TOOLS, KnowledgeBase, runMutation, runQueryCached, withMaintenanceLock, type MutationOutcome, type ToolDefinition } from "@prism/core";
-import { buildSeedMemory, seedInstructions } from "./seed.js";
+import { freshSeedMemory, getSeedMemory, seedInstructions } from "./seed.js";
 
 /**
  * Build the OKF MCP server. Each knowledge tool internally drives the LLM
@@ -14,10 +14,21 @@ import { buildSeedMemory, seedInstructions } from "./seed.js";
  * fallback; every tool-calling client loads descriptions). Without it the
  * client model has no signal that memory might hold an answer.
  */
-export async function buildMcpServer(kb: KnowledgeBase): Promise<McpServer> {
+export interface McpServerOptions {
+  /**
+   * PRISM-59: true for a long-lived session (stdio), where it's worth
+   * pushing a refreshed overview into memory_query's description after a
+   * write. The stateless HTTP endpoint builds a new server per request, so
+   * there the refresh would be wasted work on every write.
+   */
+  longLived?: boolean;
+}
+
+export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOptions = {}): Promise<McpServer> {
   // Seed generation must never prevent the server from starting — a missing
-  // or empty bundle root degrades to a minimal seed, not a crash.
-  const seed = await buildSeedMemory(kb).catch((err: Error) => {
+  // or empty bundle root degrades to a minimal seed, not a crash. PRISM-59:
+  // cached per knowledge base (see seed.ts), no longer rebuilt per request.
+  const seed = await getSeedMemory(kb).catch((err: Error) => {
     console.error(`[prism] seed generation failed: ${err.message}`);
     return "(memory overview unavailable — the bundle may be empty or unreadable; memory_status can diagnose)";
   });
@@ -58,12 +69,11 @@ export async function buildMcpServer(kb: KnowledgeBase): Promise<McpServer> {
    * (Instructions can't be updated mid-session; they refresh per session.)
    */
   const refreshSeed = async () => {
-    try {
-      const fresh = await buildSeedMemory(kb);
-      queryTool.update({ description: queryDescription(fresh) });
-    } catch (err) {
-      console.error(`[prism] seed refresh failed: ${(err as Error).message}`);
-    }
+    if (!options.longLived) return; // stateless HTTP: the next request reads the cache
+    // Never make the caller wait for a whole-bundle read after a write.
+    void freshSeedMemory(kb)
+      .then((fresh) => queryTool.update({ description: queryDescription(fresh) }))
+      .catch((err: Error) => console.error(`[prism] seed refresh failed: ${err.message}`));
   };
 
   // ── Granular tool surface (PRISM-13) ──────────────────────────────────

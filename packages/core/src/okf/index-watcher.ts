@@ -22,7 +22,7 @@
 import { watch, type FSWatcher } from "node:fs";
 import path from "node:path";
 import type { KnowledgeBase } from "./knowledge-base.js";
-import type { ReconcileReport } from "./search-index.js";
+import { indexExists, type ReconcileReport } from "./search-index.js";
 import { RESERVED_FILENAMES } from "./types.js";
 
 export type IndexWatchMode = "watch" | "poll" | "off";
@@ -38,6 +38,13 @@ export interface IndexWatcherOptions {
   pollIntervalMs?: number;
   /** Safety-net full-reconcile interval in watch mode (default 10m). 0 disables it. */
   safetyIntervalMs?: number;
+  /**
+   * PRISM-59: when no search index exists yet and the bundle has at least
+   * this many concepts, build one at startup. Below it the plain scan is fast
+   * enough (under 200ms up to ~500 concepts, PRISM-43); above it the index is
+   * ~45x faster. Default 500; 0 disables auto-build.
+   */
+  autoBuildThreshold?: number;
   /** Called after every reconcile that ran (including ones that changed nothing). */
   onReconcile?: (report: ReconcileReport, trigger: "startup" | "watch" | "poll" | "safety") => void;
   log?: (message: string) => void;
@@ -130,6 +137,18 @@ export async function startIndexWatcher(kb: KnowledgeBase, options: IndexWatcher
     interval.unref();
     log(`search index: polling every ${Math.round(pollIntervalMs / 1000)}s (${why})`);
   };
+
+  // PRISM-59: a large bundle with no index yet gets one now, instead of
+  // every search scanning thousands of files.
+  const threshold = options.autoBuildThreshold ?? 500;
+  if (threshold > 0 && !(await indexExists(kb.bundle))) {
+    const count = (await kb.bundle.listConceptPaths()).length;
+    if (count >= threshold) {
+      const t = Date.now();
+      await kb.rebuildSearchIndex();
+      log(`search index built at startup: ${count} concepts in ${Date.now() - t}ms`);
+    }
+  }
 
   // AC3: pick up anything changed while we were down, before anything else.
   await reconcile("startup");

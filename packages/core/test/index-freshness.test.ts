@@ -122,6 +122,17 @@ describe("classifyWatchEvent", () => {
 });
 
 describe("startIndexWatcher", () => {
+  it("PRISM-59: builds a missing index at startup once the bundle reaches autoBuildThreshold, not before", async () => {
+    for (let i = 0; i < 3; i++) await fs.writeFile(path.join(root, `n${i}.md`), doc(`N${i}`, "x"));
+    watcher = await startIndexWatcher(kb, { watch: false, log: () => {} }); // default threshold 500
+    expect((await kb.indexStatus()).indexed).toBe(false);
+    watcher.stop();
+    const logs: string[] = [];
+    watcher = await startIndexWatcher(kb, { watch: false, autoBuildThreshold: 3, log: (m) => logs.push(m) });
+    expect((await kb.indexStatus()).indexed).toBe(true);
+    expect(logs.join("\n")).toMatch(/search index built at startup: 3 concepts/);
+  });
+
   it("AC3: startup reconcile picks up changes made while Prism was stopped", async () => {
     await kb.writeConcept("/a.md", { type: "Note" }, "x", "add");
     await kb.rebuildSearchIndex();

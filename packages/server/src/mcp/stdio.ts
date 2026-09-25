@@ -43,7 +43,7 @@ try {
 const kb = new KnowledgeBase(bundleRoot, {
   gitAutocommit: process.env.GIT_AUTOCOMMIT === "true",
 });
-const server = await buildMcpServer(kb);
+const server = await buildMcpServer(kb, { longLived: true });
 await server.connect(new StdioServerTransport());
 // stdio transport keeps the process alive; logs must go to stderr only.
 console.error(`[prism] serving bundle ${bundleRoot} over stdio`);

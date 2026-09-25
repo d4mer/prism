@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { Bundle, BundleError } from "./bundle.js";
 import { LockBusyError, withLock } from "./locks.js";
-import { pruneEmptyDirs, regenerateIndexChain } from "./indexer.js";
+import { invalidateIndexSummaries, pruneEmptyChain, pruneEmptyDirs, regenerateIndexChain } from "./indexer.js";
 import { appendLog, readLog } from "./logger.js";
 import { searchBundle, listTypes, type SearchOptions } from "./search.js";
 import { validateBundle } from "./validate.js";
@@ -73,6 +73,16 @@ export class KnowledgeBase {
   /** PRISM-36: set by startIndexWatcher so status can report how freshness is maintained. */
   private indexWatchMode: "watch" | "poll" | "off" = "off";
   private gitignoreEnsured = false;
+  /**
+   * PRISM-59: bumped whenever bundle content changes: in-band writes, and
+   * external edits picked up by reconcile. Lets callers (e.g. the MCP seed
+   * overview) cache derived views and know cheaply when they're stale.
+   */
+  private _generation = 0;
+
+  get generation(): number {
+    return this._generation;
+  }
 
   constructor(bundleRoot: string, private readonly options: KnowledgeBaseOptions = {}) {
     this.bundle = new Bundle(bundleRoot);
@@ -186,7 +196,35 @@ export class KnowledgeBase {
    * interleave with an in-band write. No-op (indexed:false) without an index.
    */
   reconcileSearchIndex(options?: ReconcileOptions): Promise<ReconcileReport> {
-    return this.enqueue(() => reconcileSearchIndexFile(this.bundle, options));
+    return this.enqueue(async () => {
+      const report = await reconcileSearchIndexFile(this.bundle, options);
+      const changed = [...report.added, ...report.updated, ...report.removed];
+      if (!report.dryRun && changed.length > 0) {
+        // External edits: folder summaries in index.md and anything cached
+        // off the generation counter must be recomputed for these paths.
+        invalidateIndexSummaries(this.bundle, changed);
+        this._generation++;
+      }
+      return report;
+    });
+  }
+
+  /**
+   * PRISM-59: whole-bundle housekeeping that used to run on EVERY write:
+   * remove folder husks (folders left holding only index.md) anywhere in the
+   * bundle. Writes now only prune their own folder chain; call this at
+   * startup to heal husks created elsewhere (e.g. by hand, or before this
+   * change).
+   */
+  tidy(): Promise<string[]> {
+    return this.enqueueWrite(async () => {
+      const removed = await pruneEmptyDirs(this.bundle);
+      if (removed.length > 0) {
+        await regenerateIndexChain(this.bundle, "/");
+        this._generation++;
+      }
+      return removed;
+    });
   }
 
   /** PRISM-36: index freshness for status endpoints (read-only, dry-run diff). */
@@ -274,9 +312,11 @@ export class KnowledgeBase {
         frontmatter: { superseded_by: created.path },
       });
 
-      await pruneEmptyDirs(this.bundle);
       const newDir = path.posix.dirname(created.path);
       const oldDir = path.posix.dirname(updatedOld.path);
+      await pruneEmptyChain(this.bundle, newDir);
+      if (oldDir !== newDir) await pruneEmptyChain(this.bundle, oldDir);
+      this._generation++;
       await regenerateIndexChain(this.bundle, newDir);
       if (oldDir !== newDir) await regenerateIndexChain(this.bundle, oldDir);
 
@@ -393,10 +433,13 @@ export class KnowledgeBase {
     concept?: Concept
   ): Promise<void> {
     // Sweep husks first (dirs holding only their auto-generated index.md) so
-    // the reindex below never resurrects a pruned directory. Whole-bundle:
-    // cheap at this scale, and it also heals husks from before this feature.
-    await pruneEmptyDirs(this.bundle);
+    // the reindex below never resurrects a pruned directory. PRISM-59: only
+    // along this concept's own folder chain, which is the only place one
+    // mutation can create a husk; the whole-bundle sweep is tidy(), run at
+    // startup.
+    await pruneEmptyChain(this.bundle, path.posix.dirname(conceptPath));
     await regenerateIndexChain(this.bundle, path.posix.dirname(conceptPath));
+    this._generation++;
 
     // PRISM-35: keep the derived search index in sync with in-band writes.
     // Best-effort (mirrors git autocommit below) — the bundle write itself

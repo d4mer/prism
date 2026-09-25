@@ -110,3 +110,83 @@ How to use your memory:
 - When existing knowledge turns out to be wrong or outdated, fix it with memory_update.
 - memory_status reports size and health of the memory.`;
 }
+
+// ── PRISM-59: cached seed ────────────────────────────────────────────
+//
+// The HTTP MCP endpoint is stateless: every request builds a fresh McpServer.
+// Building the seed reads every concept (listTree + listTypes), so before
+// this cache every MCP call (tools/list, every tools/call) re-read the whole
+// bundle: 2.0s per concept_search at 5k concepts, vs 44ms over REST.
+//
+// The seed is an overview for the client model, not data, so it is served
+// stale-while-revalidate: a cached copy is returned immediately, and when
+// the bundle has changed (kb.generation moved) or the copy is older than
+// SEED_MAX_AGE_MS, one background refresh is started (at most one in flight,
+// and at most one per SEED_MIN_REFRESH_MS). Only the very first call for a
+// knowledge base waits for a computation.
+
+const SEED_MAX_AGE_MS = 10 * 60_000;
+const SEED_MIN_REFRESH_MS = 15_000;
+
+interface SeedEntry {
+  seed: string;
+  generation: number;
+  at: number;
+  refreshing?: Promise<string>;
+  lastRefreshStarted: number;
+}
+
+const seedCache = new WeakMap<KnowledgeBase, SeedEntry>();
+const firstCompute = new WeakMap<KnowledgeBase, Promise<string>>();
+
+function refresh(kb: KnowledgeBase, entry: SeedEntry): Promise<string> {
+  if (entry.refreshing) return entry.refreshing;
+  const generation = kb.generation;
+  entry.lastRefreshStarted = Date.now();
+  entry.refreshing = buildSeedMemory(kb)
+    .then((seed) => {
+      Object.assign(entry, { seed, generation, at: Date.now() });
+      return seed;
+    })
+    .catch((err: Error) => {
+      console.error(`[prism] seed refresh failed: ${err.message}`);
+      return entry.seed;
+    })
+    .finally(() => {
+      entry.refreshing = undefined;
+    });
+  return entry.refreshing;
+}
+
+/** The memory overview for MCP, cached per knowledge base (see above). */
+export async function getSeedMemory(kb: KnowledgeBase): Promise<string> {
+  const entry = seedCache.get(kb);
+  if (!entry) {
+    let pending = firstCompute.get(kb);
+    if (!pending) {
+      const generation = kb.generation;
+      pending = buildSeedMemory(kb).then((seed) => {
+        seedCache.set(kb, { seed, generation, at: Date.now(), lastRefreshStarted: Date.now() });
+        firstCompute.delete(kb);
+        return seed;
+      });
+      pending.catch(() => firstCompute.delete(kb));
+      firstCompute.set(kb, pending);
+    }
+    return pending;
+  }
+  const stale = entry.generation !== kb.generation || Date.now() - entry.at > SEED_MAX_AGE_MS;
+  if (stale && Date.now() - entry.lastRefreshStarted >= SEED_MIN_REFRESH_MS) void refresh(kb, entry);
+  return entry.seed;
+}
+
+/**
+ * For long-lived (stdio) sessions: wait for an up-to-date seed after a
+ * mutation, bypassing the refresh rate limit.
+ */
+export async function freshSeedMemory(kb: KnowledgeBase): Promise<string> {
+  const entry = seedCache.get(kb);
+  if (!entry) return getSeedMemory(kb);
+  if (entry.generation === kb.generation && !entry.refreshing) return entry.seed;
+  return refresh(kb, entry);
+}

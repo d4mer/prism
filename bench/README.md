@@ -63,3 +63,24 @@ Commit `25ce6d8`, Node 22.23.2, Linux arm64 VM with 4 vCPU on Jim's Mac. The 10,
 4. **Maintenance signal detection is O(n²).** The duplicate-title comparison takes 24 s at 10,000. It runs in the background, so it's tolerable, but it grows fast.
 
 Memory stays modest: under 300 MB of RSS at 10,000 concepts.
+
+## After PRISM-59
+
+`bench/results/prism-59.json`, same machine and method:
+
+| Operation (ms) | 1,000 before | 1,000 after | 5,000 before | 5,000 after | 10,000 before | 10,000 after |
+|---|---|---|---|---|---|---|
+| Write one concept, p50 | 292 | 30 | 1,437 | 70 | 2,811 | 107 |
+| Quick capture, p50 | 235 | 19 | 1,146 | 51 | 2,221 | 80 |
+| MCP concept_search, one at a time, p50 | 421 | 14 | 2,020 | 42 | — | — |
+| MCP concept_search, 20 concurrent, p50 | 3,060 | 112 | 14,700 | 468 | — | — |
+| REST capture, 10 concurrent, p50 | 1,260 | 356 | 5,796 | 1,392 | — | — |
+| REST search, one at a time, p50 | 12 | 14 | 44 | 48 | — | — |
+
+Blockers 1 and 2 are fixed:
+
+- **MCP matches REST now.** The memory overview is cached per knowledge base and refreshed in the background when the bundle changes, instead of being rebuilt from every file on every request.
+- **Writes no longer grow with the whole bundle.** Folder summaries in `index.md` are cached and invalidated only along the changed folder chain, and husk pruning is limited to that chain; the whole-bundle sweep runs once at startup. `index.md` output is unchanged: a test checks that the incremental result is byte-identical to a full regeneration.
+- **The server builds the search index at startup** for bundles of 500+ concepts that don't have one yet.
+
+Still open, tracked separately: related, open_items, changes_since and the freshness check still scan files (~3.3s at 10,000), and maintenance duplicate detection is O(n²). Concurrent REST searches also queue behind each other, because SQLite queries are synchronous (50 at once at 5,000 concepts: p50 1s). For a single user, whose searches arrive one at a time (48 ms at 5,000), this doesn't matter.

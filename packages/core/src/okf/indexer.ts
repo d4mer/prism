@@ -20,7 +20,7 @@ export async function regenerateIndex(bundle: Bundle, dir = "/"): Promise<string
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (entry.name.startsWith(".")) continue;
     if (entry.isDirectory()) {
-      const summary = await summarizeDirectory(path.join(absDir, entry.name));
+      const summary = formatSummary(await summarize(bundle.root, path.join(absDir, entry.name)));
       dirLines.push(`* [${entry.name}](${entry.name}/) - ${summary}`);
       continue;
     }
@@ -59,6 +59,8 @@ export async function regenerateIndexChain(bundle: Bundle, dir: string): Promise
   let current = bundle.resolve(dir);
   // If given a file path, start from its directory.
   if (current.endsWith(".md")) current = path.dirname(current);
+  // PRISM-59: everything on this chain may have changed; siblings haven't.
+  invalidateChain(bundle.root, current);
   // The directory may have been pruned away — start from the nearest ancestor
   // that still exists (the root always exists).
   while (current !== bundle.root) {
@@ -106,6 +108,36 @@ export async function pruneEmptyDirs(bundle: Bundle): Promise<string[]> {
   }
 
   await visit(bundle.root);
+  for (const r of removed) invalidateChain(bundle.root, bundle.resolve(r));
+  return removed;
+}
+
+/**
+ * PRISM-59: prune husks along ONE directory chain: the folder a write or
+ * delete touched and its ancestors, stopping at the first folder that still
+ * has content. This is what a single mutation can create; the whole-bundle
+ * sweep (pruneEmptyDirs) now runs at startup instead of on every write,
+ * where it cost a walk of every folder.
+ */
+export async function pruneEmptyChain(bundle: Bundle, dir: string): Promise<string[]> {
+  const removed: string[] = [];
+  let current = bundle.resolve(dir);
+  if (current.endsWith(".md")) current = path.dirname(current);
+  while (current !== bundle.root && current.startsWith(bundle.root)) {
+    let remaining: string[];
+    try {
+      remaining = await fs.readdir(current);
+    } catch {
+      current = path.dirname(current); // already gone: keep checking upward
+      continue;
+    }
+    const onlyIndex = remaining.length === 0 || (remaining.length === 1 && remaining[0] === "index.md");
+    if (!onlyIndex) break;
+    await fs.rm(current, { recursive: true, force: true });
+    removed.push(bundle.toBundlePath(current));
+    invalidateChain(bundle.root, current);
+    current = path.dirname(current);
+  }
   return removed;
 }
 
@@ -114,49 +146,118 @@ function capitalize(s: string): string {
 }
 
 /**
- * One-line deterministic summary of a directory's contents for index listings:
- * concept count, distinct types, and the first few titles — always derivable,
- * always current, no LLM.
+ * PRISM-59: directory summaries for index listings (concept count, distinct
+ * types, first few titles), computed hierarchically and cached.
+ *
+ * Before, every index.md regeneration walked and parsed every concept under
+ * each subdirectory, so regenerating the root index on any write read the
+ * whole bundle (2.8s per write at 10k concepts). Now a directory's summary
+ * is its own direct concepts combined with its subdirectories' cached
+ * summaries, in the same sorted walk order, so the result is byte-identical
+ * to the full walk. A write only invalidates its own directory chain
+ * (regenerateIndexChain), so a write reads its own folder plus one level
+ * per ancestor.
+ *
+ * Staleness: a summary only goes stale when something outside this
+ * process's write path changes a folder (another process, an external
+ * editor). The index watcher's reconcile invalidates those paths, and every
+ * entry also expires after SUMMARY_TTL_MS as a backstop. Summaries are
+ * navigation text in index.md, never data.
  */
-async function summarizeDirectory(absDir: string): Promise<string> {
-  const titles: string[] = [];
-  const types = new Set<string>();
-  let count = 0;
+interface DirSummary {
+  count: number;
+  types: Set<string>;
+  titles: string[];
+  at: number;
+}
 
-  const walk = async (dir: string): Promise<void> => {
-    let entries;
+const SUMMARY_TTL_MS = 10 * 60_000;
+const summaryCaches = new Map<string, Map<string, DirSummary>>();
+
+function cacheFor(root: string): Map<string, DirSummary> {
+  let cache = summaryCaches.get(root);
+  if (!cache) {
+    cache = new Map();
+    summaryCaches.set(root, cache);
+  }
+  return cache;
+}
+
+/** Drop cached summaries for absDir and every ancestor up to the bundle root. */
+function invalidateChain(root: string, absDir: string): void {
+  const cache = summaryCaches.get(root);
+  if (!cache) return;
+  let current = absDir;
+  for (;;) {
+    cache.delete(current);
+    if (current === root || !current.startsWith(root)) break;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+}
+
+/**
+ * Invalidate the cached summaries affected by changes to these bundle paths
+ * (from the index watcher's reconcile, i.e. edits made outside Prism).
+ */
+export function invalidateIndexSummaries(bundle: Bundle, bundlePaths: string[]): void {
+  for (const p of bundlePaths) {
     try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
+      invalidateChain(bundle.root, path.dirname(bundle.resolve(p)));
     } catch {
-      return;
+      // unresolvable path: nothing cached for it
     }
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (entry.name.startsWith(".")) continue;
-      const child = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(child);
-      } else if (entry.name.endsWith(".md") && !RESERVED_FILENAMES.has(entry.name)) {
-        count++;
-        try {
-          const { frontmatter } = parseDoc(await fs.readFile(child, "utf-8"));
-          if (typeof frontmatter.type === "string" && frontmatter.type) types.add(frontmatter.type);
-          if (titles.length < 3) {
-            titles.push(
-              typeof frontmatter.title === "string" && frontmatter.title
-                ? frontmatter.title
-                : entry.name.replace(/\.md$/, "")
-            );
-          }
-        } catch {
-          if (titles.length < 3) titles.push(entry.name.replace(/\.md$/, ""));
+  }
+}
+
+/** Forget every cached summary for a bundle (tests, or after bulk external changes). */
+export function clearIndexSummaryCache(bundle: Bundle): void {
+  summaryCaches.delete(bundle.root);
+}
+
+async function summarize(root: string, absDir: string): Promise<DirSummary> {
+  const cache = cacheFor(root);
+  const hit = cache.get(absDir);
+  if (hit && Date.now() - hit.at < SUMMARY_TTL_MS) return hit;
+
+  const summary: DirSummary = { count: 0, types: new Set(), titles: [], at: Date.now() };
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(absDir, { withFileTypes: true });
+  } catch {
+    entries = [];
+  }
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith(".")) continue;
+    const child = path.join(absDir, entry.name);
+    if (entry.isDirectory()) {
+      const sub = await summarize(root, child);
+      summary.count += sub.count;
+      for (const t of sub.types) summary.types.add(t);
+      for (const t of sub.titles) if (summary.titles.length < 3) summary.titles.push(t);
+    } else if (entry.name.endsWith(".md") && !RESERVED_FILENAMES.has(entry.name)) {
+      summary.count++;
+      try {
+        const { frontmatter } = parseDoc(await fs.readFile(child, "utf-8"));
+        if (typeof frontmatter.type === "string" && frontmatter.type) summary.types.add(frontmatter.type);
+        if (summary.titles.length < 3) {
+          summary.titles.push(
+            typeof frontmatter.title === "string" && frontmatter.title ? frontmatter.title : entry.name.replace(/\.md$/, "")
+          );
         }
+      } catch {
+        if (summary.titles.length < 3) summary.titles.push(entry.name.replace(/\.md$/, ""));
       }
     }
-  };
-  await walk(absDir);
+  }
+  cache.set(absDir, summary);
+  return summary;
+}
 
-  if (count === 0) return "empty";
-  const typeList = [...types].sort().join(", ");
-  const titleList = titles.join(", ") + (count > titles.length ? ", …" : "");
-  return `${count} concept${count === 1 ? "" : "s"}${typeList ? ` (${typeList})` : ""}: ${titleList}`;
+function formatSummary(s: DirSummary): string {
+  if (s.count === 0) return "empty";
+  const typeList = [...s.types].sort().join(", ");
+  const titleList = s.titles.join(", ") + (s.count > s.titles.length ? ", …" : "");
+  return `${s.count} concept${s.count === 1 ? "" : "s"}${typeList ? ` (${typeList})` : ""}: ${titleList}`;
 }

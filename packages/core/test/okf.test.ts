@@ -350,16 +350,33 @@ describe("empty directory pruning (#10)", () => {
     expect(rootIndex).toContain("other");
   });
 
-  it("heals pre-existing husks on the next unrelated mutation and spares dot-dirs", async () => {
-    // Simulate an old husk + a .traces dir behind the KB's back.
+  it("heals pre-existing husks via tidy() (run at server startup) and spares dot-dirs", async () => {
+    // PRISM-59: this used to happen on every mutation, which walked every
+    // folder in the bundle on every write (~30ms per write at 10k concepts,
+    // growing with folder count). A single mutation can only create a husk
+    // on its own folder chain (covered by the tests above), so the
+    // whole-bundle sweep moved to tidy(), which the server runs at startup.
     await fs.mkdir(path.join(root, "husk"), { recursive: true });
     await fs.writeFile(path.join(root, "husk/index.md"), "# Husk\n");
     await fs.mkdir(path.join(root, ".traces"), { recursive: true });
     await fs.writeFile(path.join(root, ".traces/t.json"), "{}");
 
     await kb.writeConcept("/fresh.md", { type: "T", title: "Fresh" }, "x", "add");
+    await expect(fs.access(path.join(root, "husk"))).resolves.toBeUndefined(); // unrelated write no longer sweeps
 
+    expect(await kb.tidy()).toEqual(["/husk"]);
     await expect(fs.access(path.join(root, "husk"))).rejects.toThrow();
     await expect(fs.access(path.join(root, ".traces/t.json"))).resolves.toBeUndefined();
+    const rootIndex = await fs.readFile(path.join(root, "index.md"), "utf-8");
+    expect(rootIndex).not.toContain("husk");
+  });
+
+  it("a delete prunes its own emptied folder chain, several levels deep", async () => {
+    await kb.writeConcept("/a/b/c/deep.md", { type: "T" }, "x", "add");
+    await kb.writeConcept("/a/keep.md", { type: "T" }, "x", "add");
+    await kb.deleteConcept("/a/b/c/deep.md", "gone");
+    await expect(fs.access(path.join(root, "a/b"))).rejects.toThrow(); // c and b both pruned
+    await expect(fs.access(path.join(root, "a/keep.md"))).resolves.toBeUndefined();
+    expect(await fs.readFile(path.join(root, "a/index.md"), "utf-8")).not.toContain("b/");
   });
 });
