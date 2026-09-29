@@ -116,7 +116,7 @@ afterEach(async () => {
 
 // The operations, in order. Mutating tools first, then reads over the result.
 const TODAY = new Date().toISOString().slice(0, 10);
-const STEPS: { tool: string; input: Record<string, unknown> }[] = [
+const STEPS: { tool: string; input: Record<string, unknown>; unordered?: boolean }[] = [
   { tool: "concept_capture", input: { text: "Cutover risks\n\nFreeze APO writes 48h before go-live." } },
   {
     tool: "concept_write",
@@ -159,9 +159,12 @@ const STEPS: { tool: string; input: Record<string, unknown> }[] = [
   { tool: "graph_lint", input: {} },
   { tool: "concept_template", input: { name: "fit-gap" } },
   { tool: "concept_as_of", input: { as_of: `${TODAY}T23:59:59Z` } },
-  // volatile by nature (timestamps of "now"); compared with timestamps stripped
-  { tool: "changes_since", input: { since: "1d" } },
-  { tool: "review_queue", input: {} },
+  // Volatile by nature (timestamps of "now"): compared with timestamps stripped,
+  // and as sets. Each adapter runs the same steps a few milliseconds apart, so
+  // two events that were written back to back can swap order by one
+  // millisecond; that is the clock, not a behavioural difference.
+  { tool: "changes_since", input: { since: "1d" }, unordered: true },
+  { tool: "review_queue", input: {}, unordered: true },
 ];
 
 /** Drop values that are legitimately different between runs: write-time stamps. */
@@ -176,6 +179,22 @@ function normalize(value: unknown): unknown {
     return out;
   }
   if (typeof value === "string") return value.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z/g, "<ts>");
+  return value;
+}
+
+/** Sort arrays of path-carrying records so ordering that depends on the clock cannot matter. */
+function asSet(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const items = value.map(asSet);
+    if (items.every((i) => i && typeof i === "object" && typeof (i as { path?: unknown }).path === "string")) {
+      const key = (i: unknown) => `${(i as { path: string }).path}|${(i as { kind?: string }).kind ?? ""}`;
+      return [...items].sort((a, b) => key(a).localeCompare(key(b)));
+    }
+    return items;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, asSet(v)]));
+  }
   return value;
 }
 
@@ -221,7 +240,10 @@ describe("INVARIANT adapter-parity: registry, REST and MCP are the same behaviou
 
     const results: Record<string, unknown[]> = Object.fromEntries(backends.map((b) => [b.name, []]));
     for (const step of STEPS) {
-      for (const b of backends) results[b.name].push(normalize(await b.call(step.tool, step.input)));
+      for (const b of backends) {
+        const out = normalize(await b.call(step.tool, step.input));
+        results[b.name].push(step.unordered ? asSet(out) : out);
+      }
     }
 
     const [reference, ...others] = backends;

@@ -66,9 +66,55 @@ export async function queryAsOf(bundle: Bundle, asOfDate: string): Promise<Conce
       }
     }
 
-    const eligible = chain.filter((c) => effectiveTime(c) <= asOf);
+    // Who replaced whom, from either side of the link.
+    const successor = new Map<string, string>();
+    for (const c of chain) {
+      const prev = c.frontmatter.supersedes;
+      if (typeof prev === "string" && prev.length > 0) {
+        const p = bundle.toBundlePath(prev);
+        if (concepts.has(p)) successor.set(p, c.path);
+      }
+      const next = c.frontmatter.superseded_by;
+      if (typeof next === "string" && next.length > 0) {
+        const n = bundle.toBundlePath(next);
+        if (concepts.has(n)) successor.set(c.path, n);
+      }
+    }
+
+    // A belief that was replaced stopped being current no later than its
+    // replacement began. Clamping matters because the write timestamp of the
+    // old concept is refreshed when it is marked superseded_by, which would
+    // otherwise make the old belief look newer than the one that replaced it.
+    // Equal times (same day, same millisecond) are then broken by depth in
+    // the chain: a replacement is always later than what it replaced.
+    const clampedTime = (c: Concept): number => {
+      let time = effectiveTime(c);
+      const seen = new Set<string>([c.path]);
+      let cur = successor.get(c.path);
+      while (cur && !seen.has(cur)) {
+        seen.add(cur);
+        const next = concepts.get(cur);
+        if (!next) break;
+        time = Math.min(time, effectiveTime(next));
+        cur = successor.get(cur);
+      }
+      return time;
+    };
+    const generation = (c: Concept): number => {
+      let depth = 0;
+      const seen = new Set<string>([c.path]);
+      let cur = successor.get(c.path);
+      while (cur && !seen.has(cur)) {
+        seen.add(cur);
+        depth--;
+        cur = successor.get(cur);
+      }
+      return depth;
+    };
+
+    const eligible = chain.filter((c) => clampedTime(c) <= asOf);
     if (eligible.length === 0) continue; // nothing in this chain existed yet as of asOfDate
-    eligible.sort((a, b) => effectiveTime(b) - effectiveTime(a));
+    eligible.sort((a, b) => clampedTime(b) - clampedTime(a) || generation(b) - generation(a));
     results.push(eligible[0]);
   }
 

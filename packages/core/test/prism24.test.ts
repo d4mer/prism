@@ -111,6 +111,38 @@ describe("PRISM-24: current-belief-aware retrieval", () => {
     expect(after.some((c) => c.path === "/facts/note.md")).toBe(true);
   });
 
+  it("AC3c: beliefs asserted at the same instant resolve by supersession order, not path order", async () => {
+    const same = "2026-03-01";
+    // Originals sort FIRST alphabetically, so the traversal starts from the
+    // oldest belief and a stable sort on equal times would keep it on top.
+    await kb.writeConcept("/facts/a-v1.md", { type: "Fact", asserted: same }, "v1", "Added v1.");
+    await kb.supersede("/facts/a-v1.md", "/facts/b-v2.md", { type: "Fact", asserted: same }, "v2", "Superseded v1.");
+    await kb.supersede("/facts/b-v2.md", "/facts/c-v3.md", { type: "Fact", asserted: same }, "v3", "Superseded v2.");
+    await kb.writeConcept("/facts/d-x1.md", { type: "Fact", asserted: same }, "x1", "Added x1.");
+    await kb.supersede("/facts/d-x1.md", "/facts/e-x2.md", { type: "Fact", asserted: same }, "x2", "Superseded x1.");
+
+    const got = (await kb.asOf(`${same}T12:00:00Z`)).map((c) => c.path);
+    expect(got).toEqual(["/facts/c-v3.md", "/facts/e-x2.md"]);
+  });
+
+  it("AC3d: marking a belief superseded (which refreshes its write time) does not make it look newer than its replacement", async () => {
+    await kb.writeConcept("/facts/old.md", { type: "Fact", title: "Old" }, "old", "Added old.");
+    await kb.supersede("/facts/old.md", "/facts/new.md", { type: "Fact", title: "New" }, "new", "Superseded old.");
+    const replacement = await kb.readConcept("/facts/new.md");
+    const replacedAt = Date.parse(replacement.frontmatter.timestamp as string);
+
+    // Simulate the old concept having been re-stamped after the replacement
+    // was written (exactly what happens when the superseded_by link is added).
+    const file = path.join(root, "facts", "old.md");
+    const raw = await fs.readFile(file, "utf8");
+    const later = new Date(replacedAt + 3_600_000).toISOString();
+    expect(raw).toMatch(/timestamp:/);
+    await fs.writeFile(file, raw.replace(/^timestamp: .*$/m, `timestamp: '${later}'`));
+
+    const got = (await kb.asOf(new Date(replacedAt + 7_200_000).toISOString())).map((c) => c.path);
+    expect(got).toEqual(["/facts/new.md"]);
+  });
+
   it("rejects a malformed as-of date", async () => {
     await expect(kb.asOf("not-a-date")).rejects.toThrow(/Invalid "as_of" date/);
   });
