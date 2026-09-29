@@ -1,0 +1,27 @@
+# The image installs and builds everything itself (see Dockerfile). Anything
+# built or installed on the host must NEVER enter the build context: a host
+# packages/*/node_modules is copied over the freshly installed one by
+# `COPY packages packages`, which breaks the build whenever the host install
+# is missing, partial or from a different platform (found on sigma).
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.pnpm-store
+.git
+.github
+
+# Runtime data and test material never belongs in an image.
+sample-bundle
+sample-bundle *
+understory-bundle-*.zip
+**/.prism
+**/.traces
+bench/results
+.env
+.env.*
+!.env.example
+
+# Not needed to build.
+docs
+.DS_Store
+**/.DS_Store
