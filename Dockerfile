@@ -16,6 +16,11 @@ COPY --from=build /app/packages/core/dist packages/core/dist
 COPY --from=build /app/packages/core/package.json packages/core/
 COPY --from=build /app/packages/core/node_modules packages/core/node_modules
 COPY --from=build /app/packages/server/dist packages/server/dist
+# Operator commands (`prism reindex`, `prism maintain`) run inside the container:
+#   docker compose exec prism node packages/server/bin/prism reindex /bundle
+# This matters because the server runs as root and owns the bundle's .prism/
+# folder, so the same command on the host fails with EACCES.
+COPY --from=build /app/packages/server/bin packages/server/bin
 COPY --from=build /app/packages/server/package.json packages/server/
 COPY --from=build /app/packages/server/node_modules packages/server/node_modules
 COPY --from=build /app/packages/web/dist packages/web/dist
