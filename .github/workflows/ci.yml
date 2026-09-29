@@ -1,0 +1,73 @@
+name: CI
+
+# PRISM-42. Runs on every push to main and every pull request.
+#
+#   Invariants        the properties that make Prism what it is (see
+#                     packages/core/test/invariants.test.ts and
+#                     packages/server/test/invariants-parity.test.ts). A red
+#                     check here names the property that broke.
+#   Tests (ubuntu)    the full suite plus the core-logic coverage gate.
+#   Tests (macOS,     the same suite on the platforms consultants actually
+#   Windows)          use. Informational for now (continue-on-error): remove
+#                     that line for an OS once it has run green.
+#
+# The container workflow (docker.yml) keeps its own test job as the gate for
+# publishing an image.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  invariants:
+    name: Invariants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - name: Core invariants (purity, sandbox, conformance, rebuild identity, concurrency)
+        run: pnpm --filter @prism/core exec vitest run test/invariants.test.ts
+      - name: Adapter parity (registry, REST, MCP)
+        run: pnpm --filter @prism/server exec vitest run test/invariants-parity.test.ts
+
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os != 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - name: Test with coverage gate (core logic)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          pnpm --filter @prism/core run test:coverage
+          pnpm --filter @prism/server test
+      - name: Test
+        if: matrix.os != 'ubuntu-latest'
+        run: pnpm test

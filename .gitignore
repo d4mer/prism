@@ -8,3 +8,4 @@ coverage/
 demo-bundle/
 sample-bundle 2/
 understory-bundle-*.zip
+.pnpm-store/
