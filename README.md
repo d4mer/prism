@@ -252,6 +252,10 @@ prism maintain ./my-bundle --only=repair,consolidate
 
 Exit codes mirror `diff`: `0` no-op (healthy, or nothing stale), `1` changes made (or, for `--dry-run`, changes *would* be made), `2` failure. Output is JSON: `{ dream, embeddings }`, either key present only if its passes were selected.
 
+### `prism reindex` (rebuild the search index)
+
+`prism reindex <bundle-path>` wipes the derived search index and rebuilds it from the markdown files alone (`{"reindexed": <concepts>, "ms": …}`, exit `0`; `2` on a bad path or failure). The index is only ever a cache: deleting it, or running this, changes no answer and no file. Search reads the files directly while there is no index, the server builds one automatically at startup once a bundle reaches 500 concepts, and edits made outside Prism are picked up without a rebuild. Reach for `reindex` after restoring a bundle from backup or if you suspect the index.
+
 ### Consultant workflow
 
 Tools for someone juggling workshops, workstreams and clients. All of them are deterministic (no model call) and available over MCP, REST and the built-in agent:
@@ -284,7 +288,7 @@ Concepts are plain markdown, so edit them in Obsidian or VS Code, or `git pull` 
 
 ```bash
 pnpm install                               # first run on a mounted/FUSE filesystem? see .npmrc — package-import-method=copy avoids an EPERM on install there
-pnpm test                                  # core (262 tests) + server (29 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, open items, templates, review queue, index freshness under external edits, cross-process locking, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
+pnpm test                                  # core (310 tests) + server (34 tests): spec, registry, sandbox (incl. symlink escapes), search + hybrid embedding ranking, graph-neighbor retrieval, quick capture, what-changed digest, workstream-scoped search, alias/acronym search, open items, templates, review queue, index freshness under external edits, cross-process locking, temporal/supersession, derived index, maintain CLI, concurrency, conformance property tests, OpenAPI, unified auth, streamable-HTTP MCP client (Open WebUI-equivalent)
 
 # Manual/exploratory checks — no LLM required for either of these:
 pnpm --filter @prism/server exec tsx scripts/registry-smoke.mts   # CORE_TOOLS registry CRUD round-trip against a throwaway bundle copy

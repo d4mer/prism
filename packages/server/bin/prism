@@ -1,12 +1,19 @@
 #!/usr/bin/env node
 // PRISM-26: dispatch "prism maintain <bundle-path> [...]" to the stateless
-// maintain CLI (no server involved); anything else falls back to the
-// existing behavior (an MCP stdio server on stdin/stdout).
+// maintain CLI, and "prism reindex <bundle-path>" (PRISM-35) to the index
+// rebuild (no server involved); anything else falls back to the existing
+// behavior (an MCP stdio server on stdin/stdout).
 const [, , cmd, ...rest] = process.argv;
 
 if (cmd === "maintain") {
   const { runMaintainCli } = await import("@prism/core");
   const { exitCode, output } = await runMaintainCli(rest);
+  console.log(output);
+  process.exit(exitCode);
+} else if (cmd === "reindex") {
+  // PRISM-35: wipe and rebuild the derived search index from the markdown.
+  const { runReindexCli } = await import("@prism/core");
+  const { exitCode, output } = await runReindexCli(rest);
   console.log(output);
   process.exit(exitCode);
 } else {

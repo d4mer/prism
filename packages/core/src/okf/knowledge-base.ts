@@ -186,7 +186,10 @@ export class KnowledgeBase {
    * race a concurrent write/patch/delete/supersede.
    */
   rebuildSearchIndex(): Promise<{ count: number }> {
-    return this.enqueue(() => rebuildSearchIndexFile(this.bundle));
+    // PRISM-27: a rebuild deletes and recreates the index file, so it takes the
+    // cross-process write lock too, otherwise `prism reindex` could pull the
+    // file out from under a running server's incremental index update.
+    return this.enqueueWrite(() => rebuildSearchIndexFile(this.bundle));
   }
 
   /**
