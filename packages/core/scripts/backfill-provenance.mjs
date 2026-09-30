@@ -190,7 +190,7 @@ async function main() {
     }
 
     const body = parsed.content.replace(/^\n/, "");
-    const newRaw = matter.stringify(body.endsWith("\n") ? body : body + "\n", newFm);
+    const newRaw = matter.stringify({ content: body.endsWith("\n") ? body : body + "\n", data: {} }, newFm);
     changed.push({ path: concept.path, abs: concept.abs, before: raw, after: newRaw });
   }
 
