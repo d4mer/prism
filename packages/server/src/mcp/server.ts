@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CORE_TOOLS, KnowledgeBase, runMutation, runQueryCached, withMaintenanceLock, type MutationOutcome, type ToolDefinition } from "@prism/core";
 import { freshSeedMemory, getSeedMemory, seedInstructions } from "./seed.js";
+import { linkHintFor } from "./link-hints.js";
 import { jobReply, jobsFor, jobSummary, runWithBudget, type McpToolResult } from "./jobs.js";
 
 /**
@@ -24,6 +25,13 @@ export interface McpServerOptions {
    */
   longLived?: boolean;
 }
+
+/** Direct write tools that create or rewrite a concept, and which input field names it. */
+const HINTED_WRITES: Record<string, (input: Record<string, unknown>) => string | undefined> = {
+  concept_write: (i) => (typeof i.path === "string" ? i.path : undefined),
+  concept_patch: (i) => (typeof i.path === "string" ? i.path : undefined),
+  concept_supersede: (i) => (typeof i.new_path === "string" ? i.new_path : undefined),
+};
 
 export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOptions = {}): Promise<McpServer> {
   // Seed generation must never prevent the server from starting — a missing
@@ -102,7 +110,15 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
         try {
           const result = await def.handler(kb, input);
           if (def.mutates) await refreshSeed();
-          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+          // Direct writes get a deterministic "this has no links yet" nudge so
+          // agents wire concepts in themselves instead of leaving orphans. It
+          // rides as a second content block: the first block stays the exact
+          // registry result (adapter-parity invariant).
+          const written = HINTED_WRITES[def.name]?.(input as Record<string, unknown>);
+          const hint = written ? await linkHintFor(kb, written) : undefined;
+          const content = [{ type: "text" as const, text: JSON.stringify(result, null, 2) }];
+          if (hint) content.push({ type: "text" as const, text: `HINT: ${JSON.stringify(hint, null, 2)}` });
+          return { content };
         } catch (err) {
           return {
             content: [{ type: "text" as const, text: (err as Error).message }],
