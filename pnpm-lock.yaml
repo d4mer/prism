@@ -22,6 +22,9 @@ importers:
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3
+      js-yaml:
+        specifier: ^3.15.0
+        version: 3.15.0
       simple-git:
         specifier: ^3.27.0
         version: 3.36.0
@@ -29,6 +32,9 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
     devDependencies:
+      '@types/js-yaml':
+        specifier: ^3.12.10
+        version: 3.12.10
       '@types/node':
         specifier: ^22.10.0
         version: 22.20.1
@@ -940,6 +946,9 @@ packages:
 
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
+
+  '@types/js-yaml@3.12.10':
+    resolution: {integrity: sha512-/Mtaq/wf+HxXpvhzFYzrzCqNRcA958sW++7JOFC8nPrZcvfi/TrzOaaGbvt27ltJB2NQbHVAg5a1wUCsyMH7NA==}
 
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
@@ -3253,6 +3262,8 @@ snapshots:
       '@types/unist': 3.0.3
 
   '@types/http-errors@2.0.5': {}
+
+  '@types/js-yaml@3.12.10': {}
 
   '@types/json-schema@7.0.15': {}
 

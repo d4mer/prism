@@ -9,3 +9,8 @@ demo-bundle/
 sample-bundle 2/
 understory-bundle-*.zip
 .pnpm-store/
+
+# local-only artifacts
+sample-bundle.backup.*/
+sample-bundle/.traces/
+*.local

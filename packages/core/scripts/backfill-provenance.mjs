@@ -44,7 +44,16 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import matter from "gray-matter";
+import yaml from "js-yaml";
 import { simpleGit } from "simple-git";
+
+// Same engine as okf/frontmatter.ts: keep bare dates as written (PRISM-62).
+const engines = {
+  yaml: {
+    parse: (input) => yaml.safeLoad(input, { schema: yaml.CORE_SCHEMA }),
+    stringify: (data) => yaml.safeDump(data, { schema: yaml.CORE_SCHEMA }),
+  },
+};
 
 const RESERVED = new Set(["index.md", "log.md"]);
 const PRE_PROVENANCE_SOURCE = "document";
@@ -162,7 +171,7 @@ async function main() {
 
   for (const concept of concepts) {
     const raw = await fs.readFile(concept.abs, "utf-8");
-    const parsed = matter(raw);
+    const parsed = matter(raw, { engines });
     const fm = parsed.data ?? {};
 
     if (fm.asserted !== undefined || fm.source !== undefined) {
@@ -190,7 +199,7 @@ async function main() {
     }
 
     const body = parsed.content.replace(/^\n/, "");
-    const newRaw = matter.stringify({ content: body.endsWith("\n") ? body : body + "\n", data: {} }, newFm);
+    const newRaw = matter.stringify({ content: body.endsWith("\n") ? body : body + "\n", data: {} }, newFm, { engines });
     changed.push({ path: concept.path, abs: concept.abs, before: raw, after: newRaw });
   }
 

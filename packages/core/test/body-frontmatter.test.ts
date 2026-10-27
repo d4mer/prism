@@ -55,3 +55,18 @@ describe("body that looks like front matter", () => {
     expect(second.replace(/timestamp: .*\n/, "")).toBe(first.replace(/timestamp: .*\n/, ""));
   });
 });
+
+describe("bare dates in frontmatter (PRISM-62)", () => {
+  it("keeps unquoted dates exactly as written through parse and serialize", async () => {
+    const { parseDoc, serializeDoc } = await import("../src/okf/frontmatter.js");
+    const raw = "---\ntype: Note\ndue: 2026-10-05\ntags:\n  - 2026-09-30\n  - plain\nasserted: 2026-09-30T10:00:00Z\n---\nbody\n";
+    const parsed = parseDoc(raw);
+    expect(parsed.frontmatter.due).toBe("2026-10-05");
+    expect(parsed.frontmatter.tags).toEqual(["2026-09-30", "plain"]);
+    expect(parsed.frontmatter.asserted).toBe("2026-09-30T10:00:00Z");
+    const out = serializeDoc(parsed.frontmatter as never, parsed.body);
+    expect(out).toContain("due: 2026-10-05\n");
+    expect(out).toContain("- 2026-09-30\n");
+    expect(out).not.toContain("T00:00:00.000Z");
+  });
+});
