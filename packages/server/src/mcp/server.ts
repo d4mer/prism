@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CORE_TOOLS, KnowledgeBase, runMutation, runQueryCached, withMaintenanceLock, type MutationOutcome, type ToolDefinition } from "@prism/core";
 import { freshSeedMemory, getSeedMemory, seedInstructions } from "./seed.js";
+import { jobReply, jobsFor, jobSummary, runWithBudget, type McpToolResult } from "./jobs.js";
 
 /**
  * Build the OKF MCP server. Each knowledge tool internally drives the LLM
@@ -33,6 +34,8 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
     return "(memory overview unavailable — the bundle may be empty or unreadable; memory_status can diagnose)";
   });
 
+  const jobs = jobsFor(kb);
+
   const queryDescription = (s: string) =>
     `Ask a natural-language question. An internal agent searches the OKF knowledge base, ` +
     `reads relevant concepts, and answers with cited bundle paths. If you can drive tools ` +
@@ -52,13 +55,12 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
       description: queryDescription(seed),
       inputSchema: { question: z.string().describe("The question to answer") },
     },
-    async ({ question }) => {
-      const { answer, source } = await runQueryCached(kb, question);
-      const marker = source === "cache" ? "\n\n(cached answer)" : source === "hot" ? "\n\n(hot memory)" : "";
-      return {
-        content: [{ type: "text", text: `${answer}${marker}` }],
-      };
-    }
+    async ({ question }) =>
+      runWithBudget(jobs, "memory_query", { question }, async () => {
+        const { answer, source } = await runQueryCached(kb, question);
+        const marker = source === "cache" ? "\n\n(cached answer)" : source === "hot" ? "\n\n(hot memory)" : "";
+        return { content: [{ type: "text" as const, text: `${answer}${marker}` }] };
+      })
   );
 
   /**
@@ -153,7 +155,8 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
           .describe('Optional bundle path hint, e.g. "/apis/payments.md"'),
       },
     },
-    async ({ content, suggested_path }) => {
+    async ({ content, suggested_path }) =>
+      runWithBudget(jobs, "memory_add", { content, suggested_path }, async () => {
       // Wrap the payload as an explicit directive. Bare content (e.g. a plain
       // fact like "The user's name is Anirban Kar.") otherwise reads as a chat
       // message and the agent replies conversationally instead of persisting it.
@@ -170,7 +173,7 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
       const outcome = await runMutation(kb, instruction);
       await refreshSeed();
       return mutationOutcomeResponse(outcome);
-    }
+      })
   );
 
   server.registerTool(
@@ -183,11 +186,12 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
         instruction: z.string().describe("What to change, in natural language"),
       },
     },
-    async ({ instruction }) => {
-      const outcome = await runMutation(kb, instruction);
-      await refreshSeed();
-      return mutationOutcomeResponse(outcome);
-    }
+    async ({ instruction }) =>
+      runWithBudget(jobs, "memory_update", { instruction }, async () => {
+        const outcome = await runMutation(kb, instruction);
+        await refreshSeed();
+        return mutationOutcomeResponse(outcome);
+      })
   );
 
   server.registerTool(
@@ -225,6 +229,11 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
                 },
                 // PRISM-36: whether the derived search index matches the files.
                 searchIndex: index,
+                // Background LLM jobs (memory_query/add/update/maintain); see memory_job.
+                jobs: {
+                  running: jobs.list().filter((j) => j.state === "running").length,
+                  recent: jobs.list().slice(0, 10).map(jobSummary),
+                },
               },
               null,
               2
@@ -243,7 +252,8 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
         "Health-check and repair the knowledge graph: an internal agent wires orphaned concepts (nothing links to them) into related concepts and fixes broken links. Run periodically to counter drift. No-op when the graph is already healthy. If you can drive tools directly, graph_lint finds the same issues with no LLM — you can then repair them yourself with concept_patch / link_add.",
       inputSchema: {},
     },
-    async () => {
+    async () =>
+      runWithBudget(jobs, "memory_maintain", {}, async (): Promise<McpToolResult> => {
       const before = await kb.lint();
       if (before.healthy) {
         return {
@@ -302,6 +312,22 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
           },
         ],
       };
+      })
+  );
+
+  server.registerTool(
+    "memory_job",
+    {
+      title: "Check a background job",
+      description:
+        "Deterministic (no LLM). memory_query / memory_add / memory_update / memory_maintain return a job id instead of a result when they run longer than a few seconds; the work continues server-side, so do not resend it. Pass that job_id to get the status or the finished result, in the same form the original tool would have returned. Omit job_id to list recent jobs.",
+      inputSchema: { job_id: z.string().optional().describe("Job id from an \"Accepted\" reply") },
+    },
+    async ({ job_id }) => {
+      if (!job_id) {
+        return { content: [{ type: "text" as const, text: JSON.stringify({ jobs: jobs.list().slice(0, 20).map(jobSummary) }, null, 2) }] };
+      }
+      return jobReply(jobs.get(job_id), job_id);
     }
   );
 
