@@ -104,11 +104,13 @@ MEMORY OVERVIEW (as of session start):
 
 ${seed}
 
-How to use your memory:
-- BEFORE answering anything related to the topics above, call memory_query — the answer may already be stored. Prefer stored knowledge over guessing.
-- When you learn a lasting fact, decision, preference, or piece of documentation, persist it with memory_add. If it isn't stored, it will be forgotten.
-- When existing knowledge turns out to be wrong or outdated, fix it with memory_update.
-- memory_status reports size and health of the memory.`;
+How to use your memory — drive the tools directly; they are instant and need no LLM:
+- LOOKUP: BEFORE answering anything related to the topics above, concept_search, then concept_read the hits (concept_list shows a directory). Prefer stored knowledge over guessing.
+- FILING: when you learn a lasting fact, decision, preference, or piece of documentation, persist it. concept_search first; if a concept already owns the topic, extend it with concept_patch rather than creating a duplicate. Only a distinct entity or substantial topic gets a new concept_write (concept_template shows the shape). Link new and related concepts to each other in both directions with link_add. Write tools take a short log_summary.
+- CORRECTING: concept_patch to fix, concept_supersede when a fact changed over time (keeps history), concept_delete when it is gone.
+- FALLBACK ONLY: memory_query, memory_add and memory_update hand plain prose to the server's own LLM, which does the searching and filing for you. They are slower (10 to 60 seconds); if one answers "Accepted ... job <id>", the work is running: do NOT resend it, call memory_job with that id. Use them only when you cannot drive tools directly or the question needs synthesis across many concepts.
+- Housekeeping is automatic: the server periodically runs its own LLM to wire orphans, fix broken links and merge duplicates, so you do not need memory_maintain.
+- memory_status and graph_lint report the health of the memory.`;
 }
 
 // ── PRISM-59: cached seed ────────────────────────────────────────────

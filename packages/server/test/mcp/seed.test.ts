@@ -39,3 +39,15 @@ describe("seed", () => {
     });
   });
 });
+
+describe("session instructions steer agents to the direct tools", () => {
+  it("names the direct tools as primary and the LLM-backed ones as fallback", async () => {
+    const { seedInstructions } = await import("../../src/mcp/seed.js");
+    const text = seedInstructions("(overview)");
+    expect(text.indexOf("concept_search")).toBeGreaterThan(-1);
+    expect(text.indexOf("concept_patch")).toBeLessThan(text.indexOf("memory_add"));
+    expect(text).toMatch(/FALLBACK ONLY: memory_query, memory_add and memory_update/);
+    expect(text).toMatch(/memory_job/);
+    expect(text).toMatch(/periodically/);
+  });
+});

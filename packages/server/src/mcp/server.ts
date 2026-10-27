@@ -37,10 +37,10 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
   const jobs = jobsFor(kb);
 
   const queryDescription = (s: string) =>
-    `Ask a natural-language question. An internal agent searches the OKF knowledge base, ` +
-    `reads relevant concepts, and answers with cited bundle paths. If you can drive tools ` +
-    `directly, prefer concept_search / concept_read / concept_list instead — no LLM needed ` +
-    `on this side, one round trip, structured results.\n\n` +
+    `FALLBACK for open-ended questions that need synthesis across many concepts: an internal ` +
+    `LLM agent searches the OKF knowledge base, reads relevant concepts, and answers with cited ` +
+    `bundle paths (can take 10 to 60s; may return a job id, see memory_job). For lookups, ` +
+    `use concept_search / concept_read / concept_list instead: instant, no LLM, structured results.\n\n` +
     `CURRENT MEMORY OVERVIEW:\n${s}`;
 
   const server = new McpServer(
@@ -146,7 +146,7 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
     {
       title: "Add knowledge",
       description:
-        "Provide free-form knowledge (facts, docs, decisions, runbooks). An internal agent searches for overlap, then creates or extends OKF concepts; indexes and the update log are maintained automatically. If you can drive tools directly, prefer concept_write / concept_patch / link_add instead — no LLM needed, and you control exactly where and how it's filed.",
+        "FALLBACK — prefer concept_search then concept_patch / concept_write / link_add: instant, no LLM, and you control exactly where and how it is filed. Use this only if you cannot drive tools directly. It takes free-form knowledge (facts, docs, decisions, runbooks) and an internal LLM agent searches for overlap, then creates or extends OKF concepts (10 to 60s; may return a job id, see memory_job; never resend).",
       inputSchema: {
         content: z.string().describe("The knowledge to record, in any prose form"),
         suggested_path: z
@@ -181,7 +181,7 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
     {
       title: "Update knowledge",
       description:
-        "Instruct a change to existing knowledge (correct a fact, deprecate a concept, restructure). An internal agent locates the concepts and applies targeted edits. If you can drive tools directly, prefer concept_patch / concept_delete / link_add instead — no LLM needed, and you control exactly what changes.",
+        "FALLBACK — prefer concept_patch / concept_supersede / concept_delete / link_add: instant, no LLM, and you control exactly what changes. Use this only if you cannot drive tools directly. It takes a natural-language change (correct a fact, deprecate a concept, restructure) and an internal LLM agent locates the concepts and edits them (10 to 60s; may return a job id, see memory_job; never resend).",
       inputSchema: {
         instruction: z.string().describe("What to change, in natural language"),
       },
@@ -249,7 +249,7 @@ export async function buildMcpServer(kb: KnowledgeBase, options: McpServerOption
     {
       title: "Maintain / repair memory",
       description:
-        "Health-check and repair the knowledge graph: an internal agent wires orphaned concepts (nothing links to them) into related concepts and fixes broken links. Run periodically to counter drift. No-op when the graph is already healthy. If you can drive tools directly, graph_lint finds the same issues with no LLM — you can then repair them yourself with concept_patch / link_add.",
+        "Health-check and repair the knowledge graph: an internal LLM agent wires orphaned concepts (nothing links to them) into related concepts and fixes broken links. Not normally needed: the server already does this on a schedule (DREAM_INTERVAL). No-op when the graph is already healthy. graph_lint finds the same issues with no LLM; you can repair them yourself with concept_patch / link_add.",
       inputSchema: {},
     },
     async () =>

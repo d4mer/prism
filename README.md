@@ -10,7 +10,7 @@ Bundles follow the [Open Knowledge Format (OKF) v0.1 spec](https://github.com/Go
 
 - **MCP server** — two tiers of tools over stdio or streamable HTTP, no LLM required to start the server or use the first tier:
   - **Granular (zero LLM, ever):** `concept_search` / `concept_read` / `concept_list` / `graph_lint` / `concept_related` / `concept_write` / `concept_patch` / `concept_delete` / `link_add` / `concept_supersede` / `concept_as_of` / `concept_capture` / `changes_since` / `open_items` / `concept_template` / `review_queue`. A capable calling agent files knowledge itself, one round trip per action — no server-side model involved at any point.
-  - **Coarse (needs a provider):** `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain`. Convenience for weaker clients — each call drives an internal LLM agent (with the OKF spec in its system prompt) that ends up calling the same granular tools above. `memory_status` is deterministic and needs no provider.
+  - **Coarse (needs a provider) — fallback:** `memory_query` / `memory_add` / `memory_update` / `memory_maintain`, plus the deterministic `memory_status` and `memory_job`. For weaker clients that cannot drive tools: each call drives an internal LLM agent (with the OKF spec in its system prompt) that ends up calling the same granular tools above. They can take 10 to 60 seconds, so past a short budget (`PRISM_MCP_SYNC_WAIT_MS`, default 20s) a call returns `Accepted ... job <id>` immediately and the work continues server-side; `memory_job` returns the result. An identical call while one is running joins it instead of filing twice. Agents that can drive tools should use the granular tools (`concept_search` / `concept_patch` / `concept_write` / `link_add`) as the primary path: instant, no LLM. The server's own LLM then runs on a schedule (`DREAM_INTERVAL`, default 6h in docker-compose) to wire orphans, fix broken links and merge duplicates.
 - **Web UI** — browse the bundle (tree, concept viewer, update log, conformance badge), see the memory as an Obsidian-style **force-directed graph** (drag/pan/zoom, colored by type, sized by connections, orphans ringed red, click to open), and chat with the same agent to test it. Tool calls render inline so you can watch it work.
 - **Query-path replay** — every agent run (query/mutation/chat) records its traversal (searches → reads → writes) as a compact notation, persisted under `<bundle>/.traces/`. The graph view lists recent runs; selecting one replays the path as numbered directed hops over the graph — visited concepts ringed, search hits dotted, everything else faded.
 - **CLI** — `pnpm agent:query "..."` / `pnpm agent:mutate "..."` smoke entries.
@@ -93,9 +93,9 @@ Then:
   ```bash
   claude mcp add --transport http prism http://localhost:3800/mcp
   ```
-- Your agent now has `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain`, and gets a seed overview of the memory at every session start.
+- Your agent now has the granular `concept_*` / `link_add` tools (the primary path) and the fallback `memory_query` / `memory_add` / `memory_update` / `memory_status` / `memory_maintain` / `memory_job`, and gets a seed overview of the memory at every session start.
 
-Teach it something (`memory_add`: "We deploy on Fridays, never Mondays"), then open the graph and watch the concept wire itself in.
+Teach it something ("We deploy on Fridays, never Mondays"; the agent files it with `concept_patch` / `concept_write`, or `memory_add` as the fallback), then open the graph and watch the concept wire itself in.
 
 ## Stack
 
