@@ -27,7 +27,7 @@ describe("prism reindex", () => {
 
     const out = await runReindexCli([root]);
     expect(out.exitCode).toBe(0);
-    expect(JSON.parse(out.output)).toMatchObject({ reindexed: 2 });
+    expect(JSON.parse(out.output)).toMatchObject({ reindexed: 2, embeddingsKept: 0, embeddingsDropped: 0 });
     expect((await tryIndexedSearch(kb.bundle, "beta"))?.map((h) => h.path)).toEqual(["/b/c.md"]);
   });
 

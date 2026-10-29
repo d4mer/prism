@@ -254,6 +254,65 @@ describe("PRISM-37: embeddings and hybrid ranking", () => {
     expect(callCount).toBeGreaterThan(callsAfterFirst);
   });
 
+  // PRISM-68: `prism reindex` used to drop every stored vector, leaving search
+  // silently keyword-only until the next embed pass (and re-paying the provider).
+  describe("PRISM-68: a rebuild keeps still-valid embeddings", () => {
+    it("carries vectors over an unchanged bundle: nothing is stale and no provider call is made", async () => {
+      await kb.writeConcept("/a.md", { type: "T", title: "Alpha", description: "first" }, "body a", "add");
+      await kb.writeConcept("/b.md", { type: "T", title: "Beta", description: "second" }, "body b", "add");
+      await kb.rebuildSearchIndex();
+      await generateEmbeddings(kb.bundle, { config });
+      const calls = callCount;
+
+      const rebuilt = await kb.rebuildSearchIndex();
+      expect(rebuilt).toMatchObject({ count: 2, embeddingsKept: 2, embeddingsDropped: 0 });
+
+      const report = await generateEmbeddings(kb.bundle, { config });
+      expect(report.ran).toBe(false);
+      expect(report.stale).toBe(0);
+      expect(callCount).toBe(calls);
+    });
+
+    it("drops only the vector of a concept edited behind the index's back, and never restores a stale one", async () => {
+      await kb.writeConcept("/a.md", { type: "T", title: "Alpha", description: "first" }, "body a", "add");
+      await kb.writeConcept("/b.md", { type: "T", title: "Beta", description: "second" }, "body b", "add");
+      await kb.rebuildSearchIndex();
+      await generateEmbeddings(kb.bundle, { config });
+
+      // Out-of-band edit: the file changes but the index is not told.
+      const file = path.join(root, "a.md");
+      await fs.writeFile(file, (await fs.readFile(file, "utf-8")) + "\nan out-of-band edit\n");
+
+      const rebuilt = await kb.rebuildSearchIndex();
+      expect(rebuilt).toMatchObject({ count: 2, embeddingsKept: 1, embeddingsDropped: 1 });
+
+      const dry = await generateEmbeddings(kb.bundle, { config, dryRun: true });
+      expect(dry.stale).toBe(1); // only /a.md
+    });
+
+    it("loses the vector of a concept whose file was removed, and still counts the others", async () => {
+      await kb.writeConcept("/a.md", { type: "T", title: "Alpha", description: "first" }, "body a", "add");
+      await kb.writeConcept("/b.md", { type: "T", title: "Beta", description: "second" }, "body b", "add");
+      await kb.rebuildSearchIndex();
+      await generateEmbeddings(kb.bundle, { config });
+
+      await fs.rm(path.join(root, "b.md"));
+      const rebuilt = await kb.rebuildSearchIndex();
+      expect(rebuilt).toMatchObject({ count: 1, embeddingsKept: 1, embeddingsDropped: 1 });
+    });
+
+    it("deleting the index file by hand still gives a clean, vector-free rebuild", async () => {
+      await kb.writeConcept("/a.md", { type: "T", title: "Alpha", description: "first" }, "body a", "add");
+      await kb.rebuildSearchIndex();
+      await generateEmbeddings(kb.bundle, { config });
+
+      await fs.rm(path.join(root, ".prism", "search.sqlite3"), { force: true });
+      const rebuilt = await kb.rebuildSearchIndex();
+      expect(rebuilt).toMatchObject({ count: 1, embeddingsKept: 0, embeddingsDropped: 0 });
+      expect((await generateEmbeddings(kb.bundle, { config, dryRun: true })).stale).toBe(1);
+    });
+  });
+
   it("switching EMBEDDING_MODEL invalidates every existing embedding", async () => {
     await kb.writeConcept("/a.md", { type: "T", title: "Alpha", description: "first" }, "body a", "add");
     await kb.writeConcept("/b.md", { type: "T", title: "Beta", description: "second" }, "body b", "add");

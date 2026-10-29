@@ -185,7 +185,7 @@ export class KnowledgeBase {
    * the markdown bundle alone. Routed through the mutation queue so it can't
    * race a concurrent write/patch/delete/supersede.
    */
-  rebuildSearchIndex(): Promise<{ count: number }> {
+  rebuildSearchIndex(): Promise<{ count: number; embeddingsKept: number; embeddingsDropped: number }> {
     // PRISM-27: a rebuild deletes and recreates the index file, so it takes the
     // cross-process write lock too, otherwise `prism reindex` could pull the
     // file out from under a running server's incremental index update.

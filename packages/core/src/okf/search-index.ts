@@ -281,6 +281,39 @@ function removeRow(stmts: WriteStatements, conceptPath: string): void {
   stmts.deleteLinks.run(conceptPath);
 }
 
+interface PreservedEmbedding {
+  path: string;
+  embedding: string;
+  embedding_hash: string;
+  embedding_model: string | null;
+}
+
+/**
+ * PRISM-68: read the vectors in an existing index that are still valid for
+ * the content they were generated from. Best effort: a missing, corrupt or
+ * pre-PRISM-37 index simply preserves nothing.
+ */
+function readPreservableEmbeddings(file: string): PreservedEmbedding[] {
+  let db: DatabaseSync | undefined;
+  try {
+    db = new DatabaseSync(file, { readOnly: true });
+    return db
+      .prepare(
+        `SELECT path, embedding, embedding_hash, embedding_model FROM concepts
+         WHERE embedding IS NOT NULL AND embedding_hash IS NOT NULL AND embedding_hash = content_hash`
+      )
+      .all() as unknown as PreservedEmbedding[];
+  } catch {
+    return [];
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      /* nothing to close */
+    }
+  }
+}
+
 /**
  * PRISM-35: wipe and fully repopulate the derived index from the markdown
  * bundle alone — the .md files are the only source of truth. Deleting the
@@ -288,9 +321,16 @@ function removeRow(stmts: WriteStatements, conceptPath: string): void {
  * (enforced by a test), since every column is a pure function of the
  * concept file's own content.
  */
-export async function rebuildSearchIndex(bundle: Bundle): Promise<{ count: number }> {
+export async function rebuildSearchIndex(
+  bundle: Bundle
+): Promise<{ count: number; embeddingsKept: number; embeddingsDropped: number }> {
   const file = indexPath(bundle);
   await fs.mkdir(path.dirname(file), { recursive: true });
+  // PRISM-68: vectors are expensive (provider calls) and valid for as long as
+  // the concept's content is unchanged, so lift them out of the old index
+  // before it is wiped and put them back below. Deleting the index file by
+  // hand still gives a clean, vector-free rebuild.
+  const preserved = readPreservableEmbeddings(file);
   for (const suffix of ["", "-wal", "-shm"]) {
     await fs.rm(file + suffix, { force: true });
   }
@@ -320,12 +360,23 @@ export async function rebuildSearchIndex(bundle: Bundle): Promise<{ count: numbe
       db.prepare(`INSERT INTO meta (key, value) VALUES ('rebuilt_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(
         new Date().toISOString()
       );
+      // PRISM-68: restore a vector only onto a row whose content_hash equals
+      // the hash it was generated from, so an edited concept (or one whose
+      // file vanished) can never inherit a stale vector.
+      let embeddingsKept = 0;
+      const restore = db.prepare(
+        `UPDATE concepts SET embedding = ?, embedding_hash = ?, embedding_model = ? WHERE path = ? AND content_hash = ?`
+      );
+      for (const e of preserved) {
+        const res = restore.run(e.embedding, e.embedding_hash, e.embedding_model, e.path, e.embedding_hash);
+        if (Number(res.changes) > 0) embeddingsKept++;
+      }
       db.exec("COMMIT");
+      return { count: paths.length, embeddingsKept, embeddingsDropped: preserved.length - embeddingsKept };
     } catch (err) {
       db.exec("ROLLBACK");
       throw err;
     }
-    return { count: paths.length };
   } finally {
     db.close();
   }

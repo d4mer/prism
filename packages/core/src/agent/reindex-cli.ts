@@ -6,6 +6,9 @@ import { KnowledgeBase } from "../okf/index.js";
  * it from the markdown files alone (PRISM-35's operator-facing rebuild
  * command). Safe to run any time: the index is derived data, the markdown is
  * untouched, and searches fall back to scanning the files while it rebuilds.
+ * Stored embeddings whose concept content is unchanged are carried over
+ * (PRISM-68); only edited or removed concepts lose theirs, and the output
+ * reports how many were kept and dropped.
  * Like every other write to the bundle it takes the cross-process write
  * lock (PRISM-27), so it can't collide with a running server.
  *
@@ -35,8 +38,11 @@ export async function runReindexCli(argv: string[]): Promise<ReindexCliResult> {
 
   try {
     const started = Date.now();
-    const { count } = await new KnowledgeBase(bundlePath).rebuildSearchIndex();
-    return { exitCode: 0, output: JSON.stringify({ reindexed: count, ms: Date.now() - started }, null, 2) };
+    const { count, embeddingsKept, embeddingsDropped } = await new KnowledgeBase(bundlePath).rebuildSearchIndex();
+    return {
+      exitCode: 0,
+      output: JSON.stringify({ reindexed: count, ms: Date.now() - started, embeddingsKept, embeddingsDropped }, null, 2),
+    };
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
   }
