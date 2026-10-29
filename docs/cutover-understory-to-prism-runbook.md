@@ -126,6 +126,15 @@ Write `docs/cutover-rehearsal-result.md` containing: the full phase A inventory,
 
 Preconditions, all confirmed by Jim in the conversation: G1 and G2 passed, the client table is accepted, and a quiet window is agreed. The endpoint is decided: **TARGET is Prism on sigma, port 3800, replacing sigma's current sample bundle.** Because Prism is on a different machine, every client gets a new address; nothing can be left pointing at thinkpad.
 
+**Jim's go: 2026-10-29. Decisions that replace "as Jim decides" below:**
+
+- `DREAM_INTERVAL=` (empty, dreaming off) on the TARGET. Jim will turn it on later.
+- Carry `.traces/` over with the bundle.
+- Generate a **fresh production AUTH_TOKEN**. Write it to a 0600 file on sigma (e.g. `$HOME/prism-data/prism-auth-token.local`, never inside the checkout), tell Jim the path and length only, and never print it. Client config uses it by environment variable, not pasted into files that get committed.
+- The 8 orphans are **not** repaired at cutover. Replay E.2 (provenance) and E.3 (embeddings) from the saved scripts. For E.1 run only the dry-run and record the output; do not run the real dream (the rehearsal showed it spends about 6 minutes and changes nothing).
+- Moving the bundle out of the git checkout is done by step 5 (production bundle path via `BUNDLE_HOST_PATH`); `docs/sigma-bundle-move.md` is not a separate job.
+- Jim announces the freeze (step 1) by starting this phase; he has stopped or will stop OpenClaw and Hermes writing to the SOURCE. Confirm with a `log.md` check on the SOURCE that nothing new appears before step 2.
+
 1. **Announce the freeze** to anyone writing (Jim does this; agents must stop calling the SOURCE).
 2. **Stop the SOURCE on thinkpad with `docker stop` (or the equivalent), never remove it.** This is the only way to guarantee no write lands after the final copy. The container, image and volume stay exactly as they are; this is the fallback.
 3. **Final copy.** Re-copy the bundle from the stopped SOURCE on thinkpad to a fresh folder on sigma. Build a manifest and confirm it equals the source's own manifest. Compare against `source-manifest.sha256`: differences are exactly the writes made since the rehearsal copy, and are expected, but list them.
