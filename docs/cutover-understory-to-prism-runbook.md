@@ -1,15 +1,15 @@
 # Runbook: cut over from understory to Prism (PRISM-46)
 
-Audience: the agent that manages sigma and deltahome. Owner and decision-maker: Jim.
+Audience: the agent that manages sigma and thinkpad. Owner and decision-maker: Jim.
 
 ## What this is
 
-The live knowledge base is served today by **understory** (the upstream project this fork came from), believed to be at `deltahome.local:3800`. **Prism** is the fork, currently deployed on sigma with a small sample bundle (4 concepts). The goal is to move the real bundle and every client over to Prism, with nothing lost and a rehearsed way back.
+The live knowledge base is served today by **understory** (the upstream project this fork came from), running on **thinkpad** (confirmed by Jim; discover its address and port, do not assume 3800). **Prism** is the fork, currently deployed on sigma with a small sample bundle (4 concepts). **Decided: Prism on sigma, port 3800, replaces sigma's sample bundle.** The live bundle therefore moves from thinkpad to sigma, and every client's endpoint changes from thinkpad's address to sigma's. The goal is to move the real bundle and every client over to Prism, with nothing lost and a rehearsed way back.
 
 Words used below:
 
 - **SOURCE**: the live understory instance and its bundle. Treated as read-only except where a step says otherwise.
-- **TARGET**: the Prism that will become the live endpoint.
+- **TARGET**: the Prism on sigma that will become the live endpoint (port 3800).
 - **COPY**: a rehearsal copy of the SOURCE bundle served by a throwaway Prism on a different port.
 
 Why this is not just a Prism update. It is a change of software, not a version bump:
@@ -25,7 +25,8 @@ Why this is not just a Prism update. It is a change of software, not a version b
 3. Do not touch sigma's currently running Prism container or its bundle during phases A to G. The rehearsal uses its own compose project, port and folders.
 4. Where this document says "discover", find the real value on the machine and write it in the report. Do not guess hosts, paths, versions or client lists.
 5. Stop and report at any "STOP" marker. Phases A to G need no approval and can be run now. **Phase H needs Jim's explicit go in the conversation; there is no standing approval.**
-6. Do not commit or push from sigma or deltahome.
+6. Do not commit or push from sigma or thinkpad.
+7. SOURCE and TARGET are on different machines. Copy the bundle between them over the LAN with a method that preserves permissions and timestamps and can be verified (for example `rsync -a --checksum` or `tar | ssh`), and verify the manifest on the receiving side. Never mount or share the SOURCE bundle into a Prism container directly.
 
 Working folder for everything this run creates: `$HOME/prism-cutover/` (outside any git checkout).
 
@@ -54,7 +55,7 @@ STOP if the bundle location cannot be determined or the SOURCE is not what is de
 
 ## Phase C: Stand up the COPY
 
-1. Copy the bundle (not move) to `$HOME/prism-cutover/bundle-copy`, same ownership concerns as the move procedure (`docs/sigma-bundle-move.md`): the Prism container runs as root and will own `.prism/`.
+1. Copy the bundle (not move) from thinkpad to `$HOME/prism-cutover/bundle-copy` on **sigma**, verifying the manifest after the transfer (rule 7), same ownership concerns as the move procedure (`docs/sigma-bundle-move.md`): the Prism container runs as root and will own `.prism/`.
 2. In `$HOME/prism-cutover/`, bring up a second Prism with its own compose project name so it cannot collide with sigma's running one:
    - project name `prism-rehearsal`, host port **3801**
    - `BUNDLE_HOST_PATH` pointing at the copy
@@ -87,7 +88,7 @@ These change the data on purpose, so hashes will no longer match the source afte
 Rollback means putting the bundle, now with Prism's additions, back under understory. Test that now.
 
 1. Take a copy of the bundle *after* phase E (it has the new front matter, `.prism/`, `.traces/`).
-2. Start a **throwaway understory** from the same image and configuration as the SOURCE, on port 3802, against that copy. It must not share a volume with the SOURCE.
+2. Start a **throwaway understory** on **sigma**, from the same image and configuration as the SOURCE (move the image across with `docker save | ssh sigma docker load`, or rebuild from the same upstream commit and say which), on port 3802, against that copy. It must not share a volume with the SOURCE and must not reach the SOURCE's address.
 3. Check it starts, `memory_status` reports the same concept count, and a sample of 25 concepts reads correctly, including ones that gained `asserted`, `source` or `aliases`. Also write one test concept through understory and confirm Prism, started against the same files afterwards, reads it.
 4. Record exactly what, if anything, understory complains about or ignores, and whether `.prism/` and `.traces/` need to be excluded when copying back.
 5. Time the whole procedure from "stop Prism" to "understory answering on the original endpoint with the bundle restored". Target is minutes.
@@ -123,11 +124,11 @@ Write `docs/cutover-rehearsal-result.md` containing: the full phase A inventory,
 
 ## Phase H: Cutover day (only after Jim says go)
 
-Preconditions, all confirmed by Jim in the conversation: G1 and G2 passed, the client table is accepted, a quiet window is agreed, and the final endpoint is decided. **Default assumption to confirm with Jim: TARGET is Prism on sigma, port 3800, replacing sigma's current sample bundle.** If Jim wants Prism to take over deltahome's address instead, that changes the client step, not the data steps.
+Preconditions, all confirmed by Jim in the conversation: G1 and G2 passed, the client table is accepted, and a quiet window is agreed. The endpoint is decided: **TARGET is Prism on sigma, port 3800, replacing sigma's current sample bundle.** Because Prism is on a different machine, every client gets a new address; nothing can be left pointing at thinkpad.
 
 1. **Announce the freeze** to anyone writing (Jim does this; agents must stop calling the SOURCE).
-2. **Stop the SOURCE with `docker stop` (or the equivalent), never remove it.** This is the only way to guarantee no write lands after the final copy. The container, image and volume stay exactly as they are; this is the fallback.
-3. **Final copy.** Re-copy the bundle from the stopped SOURCE to a fresh folder. Build a manifest and confirm it equals the source's own manifest. Compare against `source-manifest.sha256`: differences are exactly the writes made since the rehearsal copy, and are expected, but list them.
+2. **Stop the SOURCE on thinkpad with `docker stop` (or the equivalent), never remove it.** This is the only way to guarantee no write lands after the final copy. The container, image and volume stay exactly as they are; this is the fallback.
+3. **Final copy.** Re-copy the bundle from the stopped SOURCE on thinkpad to a fresh folder on sigma. Build a manifest and confirm it equals the source's own manifest. Compare against `source-manifest.sha256`: differences are exactly the writes made since the rehearsal copy, and are expected, but list them.
 4. **Replay phase E** from the saved scripts on this fresh copy, in the same order. Re-do the dry-run reviews; if the dry-run output differs materially from what Jim reviewed, STOP and show him.
 5. **Stage the TARGET.** Move sigma's current sample bundle aside to `$HOME/prism-data/bundle-sample-<date>` (do not delete it), put the final bundle at the production bundle path (outside the git checkout, per `docs/sigma-bundle-move.md`), set `BUNDLE_HOST_PATH` and restore the production settings: real `AUTH_TOKEN`, LLM, embeddings, and `DREAM_INTERVAL` as Jim decides. `docker compose up -d`, wait for healthy.
 6. **Smoke test the TARGET** with the production token: `memory_status` (count and conformance match step 4), `concept_search` for 5 known terms, `concept_read` for 5 concepts, one `concept_write` plus `concept_delete` of a throwaway under `/tests/`, one `memory_query` (inline or `Accepted` then `memory_job`), embeddings coverage complete. Compare against the rehearsal results.
@@ -138,8 +139,8 @@ Preconditions, all confirmed by Jim in the conversation: G1 and G2 passed, the c
 
 Roll back if the final-copy manifest is wrong, the TARGET is not healthy, the smoke test fails, a client that matters cannot work after one fix attempt, or Jim says so.
 
-- **Before any client has written to Prism**: stop the TARGET, `docker start` the SOURCE container, point clients back. The SOURCE data is untouched.
-- **After Prism has taken writes**: stop the TARGET; copy the bundle back over the SOURCE volume by the exact method rehearsed in phase F (with `.prism/` and `.traces/` handled as phase F found); start the SOURCE; point clients back. Take a safety archive of the SOURCE volume first. Report the elapsed time against the rehearsed figure.
+- **Before any client has written to Prism**: stop the TARGET, `docker start` the SOURCE container on thinkpad, point clients back at thinkpad. The SOURCE data is untouched.
+- **After Prism has taken writes**: stop the TARGET; copy the bundle from sigma back over the SOURCE volume on thinkpad by the exact method rehearsed in phase F (with `.prism/` and `.traces/` handled as phase F found, and the manifest verified on arrival); start the SOURCE; point clients back. Take a safety archive of the SOURCE volume first. Report the elapsed time against the rehearsed figure.
 
 ## Phase I: After the cutover
 
@@ -153,4 +154,4 @@ Roll back if the final-copy manifest is wrong, the TARGET is not healthy, the sm
 - After phases A to G: `docs/cutover-rehearsal-result.md`.
 - After phases H and I: `docs/cutover-day-result.md`, with timestamps for each step, the manifests' comparison, client switch times, smoke test results, anomalies and the rollback decision.
 
-No tokens or keys in either. Do not commit or push from sigma or deltahome.
+No tokens or keys in either. Do not commit or push from sigma or thinkpad.
