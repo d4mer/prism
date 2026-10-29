@@ -1,26 +1,26 @@
-# Runbook: cut over from understory to Prism (PRISM-46)
+# Runbook: cut over from legacy to Prism (PRISM-46)
 
 Audience: the agent that manages sigma and thinkpad. Owner and decision-maker: Jim.
 
 ## What this is
 
-The live knowledge base is served today by **understory** (the upstream project this fork came from), running on **thinkpad** (confirmed by Jim; discover its address and port, do not assume 3800). **Prism** is the fork, currently deployed on sigma with a small sample bundle (4 concepts). **Decided: Prism on sigma, port 3800, replaces sigma's sample bundle.** The live bundle therefore moves from thinkpad to sigma, and every client's endpoint changes from thinkpad's address to sigma's. The goal is to move the real bundle and every client over to Prism, with nothing lost and a rehearsed way back.
+The live knowledge base is served today by **legacy** (the upstream project this fork came from), running on **thinkpad** (confirmed by Jim; discover its address and port, do not assume 3800). **Prism** is the fork, currently deployed on sigma with a small sample bundle (4 concepts). **Decided: Prism on sigma, port 3800, replaces sigma's sample bundle.** The live bundle therefore moves from thinkpad to sigma, and every client's endpoint changes from thinkpad's address to sigma's. The goal is to move the real bundle and every client over to Prism, with nothing lost and a rehearsed way back.
 
 Words used below:
 
-- **SOURCE**: the live understory instance and its bundle. Treated as read-only except where a step says otherwise.
+- **SOURCE**: the live legacy instance and its bundle. Treated as read-only except where a step says otherwise.
 - **TARGET**: the Prism on sigma that will become the live endpoint (port 3800).
 - **COPY**: a rehearsal copy of the SOURCE bundle served by a throwaway Prism on a different port.
 
 Why this is not just a Prism update. It is a change of software, not a version bump:
 
-- understory and Prism are different codebases that share the OKF bundle format. Prism adds optional front matter (`asserted`, `source`, `confidence`, `supersedes`, `superseded_by`, `aliases`, `status`, `owner`, `due`), a derived `.prism/` folder (search index, locks), and runtime `.traces/`. **Nothing guarantees understory tolerates those**, so the way back has to be tested, not assumed (phase F).
-- Prism keeps understory's five tools (`memory_status`, `memory_query`, `memory_add`, `memory_update`, `memory_maintain`) and adds granular `concept_*` tools, `memory_job` and others. Clients should work with an endpoint and token change only, but **behaviour differs** where it matters (phase G).
+- legacy and Prism are different codebases that share the OKF bundle format. Prism adds optional front matter (`asserted`, `source`, `confidence`, `supersedes`, `superseded_by`, `aliases`, `status`, `owner`, `due`), a derived `.prism/` folder (search index, locks), and runtime `.traces/`. **Nothing guarantees legacy tolerates those**, so the way back has to be tested, not assumed (phase F).
+- Prism keeps legacy's five tools (`memory_status`, `memory_query`, `memory_add`, `memory_update`, `memory_maintain`) and adds granular `concept_*` tools, `memory_job` and others. Clients should work with an endpoint and token change only, but **behaviour differs** where it matters (phase G).
 - Prism rewrites front matter in its own format whenever it saves a concept, so byte-identical hashes only hold while Prism has not written to a concept. Parity is therefore checked before anything writes, and later improvements are separate, reviewable steps.
 
 ## Rules for the whole run
 
-1. **Never print, log, echo or commit any token or API key**, from understory, Prism, olmx or anywhere else. Read them from the environment or existing `.env`, use them only in request headers, and report only lengths or that they are set.
+1. **Never print, log, echo or commit any token or API key**, from legacy, Prism, olmx or anywhere else. Read them from the environment or existing `.env`, use them only in request headers, and report only lengths or that they are set.
 2. Do not modify, restart, stop or delete the SOURCE until phase H, and only when Jim has said go. Reading its bundle, running read-only tools against it, and copying files out are all fine.
 3. Do not touch sigma's currently running Prism container or its bundle during phases A to G. The rehearsal uses its own compose project, port and folders.
 4. Where this document says "discover", find the real value on the machine and write it in the report. Do not guess hosts, paths, versions or client lists.
@@ -34,12 +34,12 @@ Working folder for everything this run creates: `$HOME/prism-cutover/` (outside 
 
 Write the answers into `docs/cutover-rehearsal-result.md` as you go.
 
-1. How understory runs: host, container or process, image or commit, how it is started (compose file path, Portainer stack, systemd). `docker inspect` output for the container, with environment values for any name containing TOKEN, KEY or SECRET removed.
+1. How legacy runs: host, container or process, image or commit, how it is started (compose file path, Portainer stack, systemd). `docker inspect` output for the container, with environment values for any name containing TOKEN, KEY or SECRET removed.
 2. **Where the bundle lives** (docker volume or host path), its total size, file count, and concept count. Is the bundle a git repository (`.git` present)? Is `GIT_AUTOCOMMIT` on? If it is a repo, history must travel with the data.
-3. **Everything in the bundle that is not a `.md` concept**: hidden folders, caches, index files, anything understory itself generates. List them. Decide per item in the report: copy, regenerate, or ignore. Do not delete any of it.
-4. Auth: does understory require a token? Which variable name? (Name only.) How many distinct values appear to be in use across clients, if you can tell.
-5. LLM settings understory uses (variable names, base URL, model name; not keys). The same provider details carry over to Prism; the variable names `LLM_API_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` and the legacy ones are supported by Prism.
-6. **Client inventory.** Who talks to the SOURCE? Use understory's logs, the access list, and ask Jim for anything not visible. For each client record: name, transport (MCP over mcp-remote, native MCP, REST), where its config lives, and what MCP server *name* it registers (this matters: see phase G). Expected candidates, to be confirmed not assumed: Claude Desktop and Claude Code sessions, Open WebUI, the other agents that write to the knowledge base, any cron or scheduled jobs.
+3. **Everything in the bundle that is not a `.md` concept**: hidden folders, caches, index files, anything legacy itself generates. List them. Decide per item in the report: copy, regenerate, or ignore. Do not delete any of it.
+4. Auth: does legacy require a token? Which variable name? (Name only.) How many distinct values appear to be in use across clients, if you can tell.
+5. LLM settings legacy uses (variable names, base URL, model name; not keys). The same provider details carry over to Prism; the variable names `LLM_API_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` and the legacy ones are supported by Prism.
+6. **Client inventory.** Who talks to the SOURCE? Use legacy's logs, the access list, and ask Jim for anything not visible. For each client record: name, transport (MCP over mcp-remote, native MCP, REST), where its config lives, and what MCP server *name* it registers (this matters: see phase G). Expected candidates, to be confirmed not assumed: Claude Desktop and Claude Code sessions, Open WebUI, the other agents that write to the knowledge base, any cron or scheduled jobs.
 7. Current usage: which tools are actually called, from logs or traces, and roughly how often. This decides which compatibility checks matter most.
 
 STOP if the bundle location cannot be determined or the SOURCE is not what is described above. Report and wait.
@@ -51,7 +51,7 @@ STOP if the bundle location cannot be determined or the SOURCE is not what is de
    ```
    cd <bundle> && find . -path ./.git -prune -o -path ./<derived> -prune -o -type f -print0 | sort -z | xargs -0 sha256sum > $HOME/prism-cutover/source-manifest.sha256
    ```
-3. Baseline numbers from understory's own `memory_status` (a read-only call): concept count, links, orphans, broken links, type distribution. These replace the stale August figures in PRISM-46.
+3. Baseline numbers from legacy's own `memory_status` (a read-only call): concept count, links, orphans, broken links, type distribution. These replace the stale August figures in PRISM-46.
 
 ## Phase C: Stand up the COPY
 
@@ -67,10 +67,10 @@ STOP if the bundle location cannot be determined or the SOURCE is not what is de
 ## Phase D: Parity (the copy must not have been written to by Prism yet)
 
 1. **Hash parity.** Regenerate the manifest of the copy, excluding `.prism/`, `.traces/` and whatever phase A decided to ignore. It must equal `source-manifest.sha256` exactly. If Prism's startup cleanup removed an empty folder or changed anything, report exactly which path and why, do not fix it by hand.
-2. **Count parity.** Prism's `memory_status` against understory's baseline: concept count, links, orphans, broken links, type distribution. Differences must be explained (for example an orphan count that depends on definition) or the gate fails.
+2. **Count parity.** Prism's `memory_status` against legacy's baseline: concept count, links, orphans, broken links, type distribution. Differences must be explained (for example an orphan count that depends on definition) or the gate fails.
 3. **Read parity.** Pick at least 25 concepts spread across types and folders, including the largest and any with unusual characters or long descriptions. For each, `concept_read` through Prism must return a body identical to the file on disk. Record any mismatch.
-4. **Retrieval parity.** Understory only exposes `memory_query`, Prism has `concept_search`. Take at least 10 realistic questions (ask Jim for some; add ones taken from concept titles and from recent real usage in the logs). For each, compare what understory's `memory_query` cites against Prism's `concept_search` top 5. Note misses where understory found a concept Prism's keyword search did not. Embeddings are not on yet; this is the keyword baseline.
-5. **Tool surface.** From the copy, call each of understory's five tools once where it is safe to do so (`memory_status` always; `memory_query` and `memory_maintain` only if an LLM is configured on the copy, otherwise record the clean "No LLM configured" response). Confirm `memory_job` exists and that a `memory_status` result contains a `jobs` object.
+4. **Retrieval parity.** Legacy server only exposes `memory_query`, Prism has `concept_search`. Take at least 10 realistic questions (ask Jim for some; add ones taken from concept titles and from recent real usage in the logs). For each, compare what legacy's `memory_query` cites against Prism's `concept_search` top 5. Note misses where legacy found a concept Prism's keyword search did not. Embeddings are not on yet; this is the keyword baseline.
+5. **Tool surface.** From the copy, call each of legacy's five tools once where it is safe to do so (`memory_status` always; `memory_query` and `memory_maintain` only if an LLM is configured on the copy, otherwise record the clean "No LLM configured" response). Confirm `memory_job` exists and that a `memory_status` result contains a `jobs` object.
 
 **GATE G1: parity.** Pass only if D.1, D.2 and D.3 are clean. D.4 is a judgement call for Jim: report the evidence and let him decide. STOP and report.
 
@@ -83,23 +83,23 @@ These change the data on purpose, so hashes will no longer match the source afte
 3. **Embeddings**: configure `EMBEDDING_API_BASE_URL`, `EMBEDDING_MODEL` and key on the copy from sigma's existing `.env` (olmx, `bge-m3-mlx-fp16`), run `maintain --only=embed`, record the concept count, time and any failures, then a second run must say "up to date". Run `reindex` and confirm `embeddingsKept` equals the concept count.
 4. Re-run the retrieval questions from D.4 with embeddings on and record the difference.
 
-## Phase F: Prove the way back (the part specific to understory)
+## Phase F: Prove the way back (the part specific to legacy)
 
-Rollback means putting the bundle, now with Prism's additions, back under understory. Test that now.
+Rollback means putting the bundle, now with Prism's additions, back under legacy. Test that now.
 
 1. Take a copy of the bundle *after* phase E (it has the new front matter, `.prism/`, `.traces/`).
-2. Start a **throwaway understory** on **sigma**, from the same image and configuration as the SOURCE (move the image across with `docker save | ssh sigma docker load`, or rebuild from the same upstream commit and say which), on port 3802, against that copy. It must not share a volume with the SOURCE and must not reach the SOURCE's address.
-3. Check it starts, `memory_status` reports the same concept count, and a sample of 25 concepts reads correctly, including ones that gained `asserted`, `source` or `aliases`. Also write one test concept through understory and confirm Prism, started against the same files afterwards, reads it.
-4. Record exactly what, if anything, understory complains about or ignores, and whether `.prism/` and `.traces/` need to be excluded when copying back.
-5. Time the whole procedure from "stop Prism" to "understory answering on the original endpoint with the bundle restored". Target is minutes.
+2. Start a **throwaway legacy** on **sigma**, from the same image and configuration as the SOURCE (move the image across with `docker save | ssh sigma docker load`, or rebuild from the same upstream commit and say which), on port 3802, against that copy. It must not share a volume with the SOURCE and must not reach the SOURCE's address.
+3. Check it starts, `memory_status` reports the same concept count, and a sample of 25 concepts reads correctly, including ones that gained `asserted`, `source` or `aliases`. Also write one test concept through legacy and confirm Prism, started against the same files afterwards, reads it.
+4. Record exactly what, if anything, legacy complains about or ignores, and whether `.prism/` and `.traces/` need to be excluded when copying back.
+5. Time the whole procedure from "stop Prism" to "legacy answering on the original endpoint with the bundle restored". Target is minutes.
 
-**GATE G2: rollback.** Pass only if the throwaway understory reads the Prism-modified bundle without loss and the restore is timed. If understory cannot read it, STOP: the options (strip the new fields on the way back with a script, or accept no rollback after the first Prism write) are Jim's decision.
+**GATE G2: rollback.** Pass only if the throwaway legacy reads the Prism-modified bundle without loss and the restore is timed. If legacy cannot read it, STOP: the options (strip the new fields on the way back with a script, or accept no rollback after the first Prism write) are Jim's decision.
 
 ## Phase G: Client changes and what behaves differently
 
 Write this as a table in the report, one row per client from phase A.6. Nothing is changed on any client yet.
 
-For each client the change is the **endpoint and the token**, nothing else, assuming the MCP server *name* is kept. Keep the registered server name `understory` at first, even though it now points at Prism: agents and prompts reference tool names like `mcp__understory__memory_query`, so a rename would silently break them. Whether to rename later is a separate decision for Jim.
+For each client the change is the **endpoint and the token**, nothing else, assuming the MCP server *name* is kept. Keep the registered server name `prism` at first, even though it now points at Prism: agents and prompts reference tool names like `mcp__prism__memory_query`, so a rename would silently break them. Whether to rename later is a separate decision for Jim.
 
 How each type of client registers Prism:
 
@@ -112,7 +112,7 @@ Behaviour differences to tell every client owner about:
 1. A slow `memory_query`, `memory_add`, `memory_update` or `memory_maintain` call can return `Accepted: ... (job <id>)` after about 20 seconds instead of waiting; the answer is fetched with `memory_job`. Clients that assumed a blocking answer must handle this.
 2. The session instructions now prefer the direct tools (`concept_search`, `concept_read`, `concept_patch`, `concept_write` plus `link_add`) and label `memory_query/add/update` as fallback only.
 3. `concept_write`, `concept_patch` and `concept_supersede` over MCP append a second text block starting `HINT:` when the concept just written has no links.
-4. Prism authentication is one shared bearer token. If understory had none, every client now needs one; if it had several, they collapse into one.
+4. Prism authentication is one shared bearer token. If legacy had none, every client now needs one; if it had several, they collapse into one.
 5. Search is keyword plus embeddings (olmx). Stopword noise in natural-language queries was fixed in fe4aa1a (PRISM-67); queries like "cutting safety stock in the warehouse" no longer pick up "in"/"the" noise.
 6. Several agents write to this one knowledge base. Writes are locked, but `log.md` does not record which agent wrote what (PRISM-38 is parked).
 

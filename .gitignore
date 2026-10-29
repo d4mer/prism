@@ -7,7 +7,7 @@ dist/
 coverage/
 demo-bundle/
 sample-bundle 2/
-understory-bundle-*.zip
+*bundle-*.zip
 .pnpm-store/
 
 # local-only artifacts

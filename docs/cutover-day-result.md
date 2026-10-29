@@ -1,11 +1,11 @@
-# Cutover day — Understory (thinkpad) → Prism (sigma), PRISM-46 phase H
+# Cutover day — Legacy server (thinkpad) → Prism (sigma), PRISM-46 phase H
 
-Executed 2026-10-29, 14:56–15:17 Europe/Madrid, per `docs/cutover-understory-to-prism-runbook.md` phase H with Jim's go decisions (dreaming off, carry `.traces/`, fresh production token in 0600 file, orphans untouched, bundle outside checkout by step 5). **Cutover complete; H.8 first-use check pending on Jim.** No commits or pushes from sigma. No token or key printed anywhere this run.
+Executed 2026-10-29, 14:56–15:17 Europe/Madrid, per `docs/cutover-to-prism-runbook.md` phase H with Jim's go decisions (dreaming off, carry `.traces/`, fresh production token in 0600 file, orphans untouched, bundle outside checkout by step 5). **Cutover complete; H.8 first-use check pending on Jim.** No commits or pushes from sigma. No token or key printed anywhere this run.
 
 ## H.1 freeze / H.2 SOURCE stopped
 
 - Freeze confirmed by check: SOURCE `log.md` and `index.md` byte-identical to the rehearsal manifest (mtimes 2026-10-27 22:41) — no writes since rehearsal.
-- `docker stop understory-fork-understory-1` at ~14:56 (Exited 137; container, image and bind-mounted bundle all preserved, nothing removed — this is the fallback).
+- `docker stop <legacy container>` at ~14:56 (Exited 137; container, image and bind-mounted bundle all preserved, nothing removed — this is the fallback).
 
 ## H.3 final copy
 
@@ -22,7 +22,7 @@ Executed 2026-10-29, 14:56–15:17 Europe/Madrid, per `docs/cutover-understory-t
 
 - Sample bundle moved aside: `~/prism/sample-bundle` → `~/prism-data/bundle-sample-20261029` (preserved).
 - Final bundle → production path `~/prism-data/bundle` (outside the checkout); `.env` `BUNDLE_HOST_PATH=/home/maverick/prism-data/bundle`.
-- **Fresh production AUTH_TOKEN**: 48 chars, stored `~/prism-data/prism-auth-token.local` (0600) and `.env` (0600). Path + length only, never printed. All previously leaked tokens (understory bearer, old Prism bearer) are now dead — Prism accepts only the new one (verified: unauthenticated probe → 401).
+- **Fresh production AUTH_TOKEN**: 48 chars, stored `~/prism-data/prism-auth-token.local` (0600) and `.env` (0600). Path + length only, never printed. All previously leaked tokens (legacy bearer, old Prism bearer) are now dead — Prism accepts only the new one (verified: unauthenticated probe → 401).
 - `DREAM_INTERVAL=` (empty) → dreaming off on TARGET, per go.
 - LLM + embeddings restored unchanged (oMLX on macbookm1).
 - `docker compose up -d` → healthy.
@@ -36,20 +36,20 @@ Executed 2026-10-29, 14:56–15:17 Europe/Madrid, per `docs/cutover-understory-t
 - `memory_query` (Headscale): answered inline with correct facts (first attempt went through the async `Accepted`/`memory_job` path on a cold model — expected PRISM behaviour, documented as client difference #1). Embeddings coverage complete.
 - Result matches the rehearsal across the board.
 
-## H.7 client switches (name `understory` kept everywhere)
+## H.7 client switches (name `prism` kept everywhere)
 
 | # | client | time | change | real-call verification |
 |---|---|---|---|---|
-| 1 | **OpenClaw** (thinkpad) | 15:11 | `mcp.servers.understory.url` → `http://192.168.1.195:3800/mcp`; header → `Bearer ${PRISM_MCP_TOKEN}` (SecretRef; value in `~/.openclaw/gateway.systemd.env`, 0600); gateway restarted (verified by fresh PID/etime) | end-to-end through the gateway API: `openclaw/main` called `understory__memory_query` and returned Prism's verbatim answer |
-| 2 | **Hermes** (thinkpad) | 15:15 | `mcp_servers.understory.url` → sigma + `Authorization: Bearer ${MCP_UNDERSTORY_API_KEY}` (`.env`, 0600); `MCP_PRISM_API_KEY` updated to the new token so the existing `prism` entry stays live | `hermes mcp test understory` → connected, 22 Prism tools incl. `memory_job` |
-| 3 | **Claude Desktop** (macbookm1) | 15:17 | `understory` args → `http://192.168.1.195:3800/mcp --allow-http` (was broken: pointed at `127.0.0.1:3800`); token in env `PRISM_AUTH` only; duplicate `prism-sigma` entry's stale token refreshed | real MCP `initialize` from the mac with the stored header → HTTP 200. **App restart needed to pick the config up — Jim.** |
+| 1 | **OpenClaw** (thinkpad) | 15:11 | `mcp.servers.prism.url` → `http://192.168.1.195:3800/mcp`; header → `Bearer ${PRISM_MCP_TOKEN}` (SecretRef; value in `~/.openclaw/gateway.systemd.env`, 0600); gateway restarted (verified by fresh PID/etime) | end-to-end through the gateway API: `openclaw/main` called `prism__memory_query` and returned Prism's verbatim answer |
+| 2 | **Hermes** (thinkpad) | 15:15 | `mcp_servers.prism.url` → sigma + `Authorization: Bearer ${MCP_PRISM_API_KEY_NEW}` (`.env`, 0600); `MCP_PRISM_API_KEY` updated to the new token so the existing `prism` entry stays live | `hermes mcp test prism` → connected, 22 Prism tools incl. `memory_job` |
+| 3 | **Claude Desktop** (macbookm1) | 15:17 | `prism` args → `http://192.168.1.195:3800/mcp --allow-http` (was broken: pointed at `127.0.0.1:3800`); token in env `PRISM_AUTH` only; duplicate `prism-sigma` entry's stale token refreshed | real MCP `initialize` from the mac with the stored header → HTTP 200. **App restart needed to pick the config up — Jim.** |
 
-Nothing points at thinkpad anymore. Open WebUI has no MCP server configured and was not switched (not a current client); if Jim wants it in the H.8 check, Admin Settings → Connections → MCP Servers: name `understory`, streamable HTTP `http://192.168.1.195:3800/mcp`, auth Bearer with the token from `~/prism-data/prism-auth-token.local`.
+Nothing points at thinkpad anymore. Open WebUI has no MCP server configured and was not switched (not a current client); if Jim wants it in the H.8 check, Admin Settings → Connections → MCP Servers: name `prism`, streamable HTTP `http://192.168.1.195:3800/mcp`, auth Bearer with the token from `~/prism-data/prism-auth-token.local`.
 
 ## State and rollback posture
 
 - **TARGET live:** Prism on sigma :3800, 139-concept real bundle at `~/prism-data/bundle`, dreaming off, LLM+embeddings on.
-- **Fallback intact:** SOURCE container (`docker start understory-fork-understory-1`), image, and untouched thinkpad bundle all preserved.
+- **Fallback intact:** SOURCE container (`docker start <legacy container>`), image, and untouched thinkpad bundle all preserved.
 - Prism has already taken writes (smoke fixture + log entries), so rollback would follow the phase-F procedure (copy back excluding `.prism/`, `.traces/` may ride, manifest verify, start SOURCE, repoint clients) — rehearsed at 8.8 s to first answer.
 - Bundle provenance on the TARGET: 70 dated `asserted`, 69 `source: document`, orphans 8 (untouched per decision).
 
@@ -59,5 +59,5 @@ Nothing points at thinkpad anymore. Open WebUI has no MCP server configured and 
 2. Claude Desktop app restart on macbookm1.
 3. Dreaming is off — remember to set `DREAM_INTERVAL` when Jim wants consolidation running.
 4. Plane PAT rotation still outstanding (unrelated to this cutover but leaked earlier).
-5. Current Hermes chat session still holds the pre-cutover tool snapshot; next session picks up the switched `understory` (this session's `mcp__understory__*` calls would hit the stopped SOURCE).
+5. Current Hermes chat session still holds the pre-cutover tool snapshot; next session picks up the switched `prism` (this session's `mcp__prism__*` calls would hit the stopped SOURCE).
 6. Uncommitted on sigma: this file, plus the previous result docs Ed has not yet committed.

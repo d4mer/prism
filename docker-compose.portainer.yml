@@ -4,7 +4,7 @@
 #
 # PRISM-49: this now points at Prism's own image (.github/workflows/docker.yml
 # publishes it to ghcr.io/d4mer/prism on every push to main and on version
-# tags). It previously pointed at ghcr.io/thecodacus/understory:latest — the
+# tags). It previously pointed at the
 # upstream project's image, which has diverged from this fork (no tool
 # registry, no LLM-optional startup, no hybrid search, etc). That image is
 # only published once this repo's own commits are pushed to GitHub and the

@@ -13,7 +13,7 @@
 # Runtime data and test material never belongs in an image.
 sample-bundle
 sample-bundle *
-understory-bundle-*.zip
+*bundle-*.zip
 **/.prism
 **/.traces
 bench/results

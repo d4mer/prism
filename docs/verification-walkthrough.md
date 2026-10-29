@@ -253,14 +253,14 @@ echo "log entries added: $(( $(grep -c '^\* \*\*' "$V/log.md") - before )) (shou
 This one uses your real export, on a copy.
 
 ```bash
-rm -rf /tmp/real && mkdir /tmp/real && unzip -q understory-bundle-2026-08-30.zip -d /tmp/real
+rm -rf /tmp/real && mkdir /tmp/real && unzip -q bundle-2026-08-30.zip -d /tmp/real
 R=/tmp/real/sample-bundle
 node packages/core/scripts/backfill-provenance.mjs "$R" > /tmp/backfill-plan.txt; head -12 /tmp/backfill-plan.txt
 node packages/core/scripts/backfill-provenance.mjs "$R" --apply | tail -2
 node packages/core/scripts/backfill-provenance.mjs "$R" --apply | tail -3
 ```
 
-**Passes if** the first run (a preview that changes nothing) says 63 concepts were scanned, 15 have a date recoverable from `log.md` and the other 48 get `source: document` with **no invented date**; `--apply` writes the changes; and the second `--apply` says *No changes needed*. Skim `/tmp/backfill-plan.txt`: any `asserted=` date should match the date in that concept's `log.md` entry. The diffs in the plan will also show some cosmetic YAML re-wrapping (long descriptions folded, quote style) because Prism rewrites front matter in its own format; that is expected. One thing to know: a tag written as a bare date (`- 2026-08-26` in `understory-dockerd-recovery.md`) is re-saved as `2026-08-26T00:00:00.000Z`. That is a real wart in how dates are round-tripped, tracked as its own ticket, and is why this runs on a copy.
+**Passes if** the first run (a preview that changes nothing) says 63 concepts were scanned, 15 have a date recoverable from `log.md` and the other 48 get `source: document` with **no invented date**; `--apply` writes the changes; and the second `--apply` says *No changes needed*. Skim `/tmp/backfill-plan.txt`: any `asserted=` date should match the date in that concept's `log.md` entry. The diffs in the plan will also show some cosmetic YAML re-wrapping (long descriptions folded, quote style) because Prism rewrites front matter in its own format; that is expected. One thing to know: a tag written as a bare date (`- 2026-08-26` in a concept) is re-saved as `2026-08-26T00:00:00.000Z`. That is a real wart in how dates are round-tripped, tracked as its own ticket, and is why this runs on a copy.
 
 ## 15. Speed (PRISM-59, PRISM-43)
 
