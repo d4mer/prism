@@ -113,7 +113,7 @@ Behaviour differences to tell every client owner about:
 2. The session instructions now prefer the direct tools (`concept_search`, `concept_read`, `concept_patch`, `concept_write` plus `link_add`) and label `memory_query/add/update` as fallback only.
 3. `concept_write`, `concept_patch` and `concept_supersede` over MCP append a second text block starting `HINT:` when the concept just written has no links.
 4. Prism authentication is one shared bearer token. If understory had none, every client now needs one; if it had several, they collapse into one.
-5. Search is keyword plus embeddings (olmx). One known weakness: stopword-heavy natural-language queries rank worse than clean ones (PRISM-67).
+5. Search is keyword plus embeddings (olmx). Stopword noise in natural-language queries was fixed in fe4aa1a (PRISM-67); queries like "cutting safety stock in the warehouse" no longer pick up "in"/"the" noise.
 6. Several agents write to this one knowledge base. Writes are locked, but `log.md` does not record which agent wrote what (PRISM-38 is parked).
 
 ## STOP: report phases A to G
