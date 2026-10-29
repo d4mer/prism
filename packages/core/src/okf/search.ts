@@ -16,6 +16,31 @@ export interface SearchOptions {
   scope?: string;
 }
 
+// PRISM-67: function words that substring-match nearly every document and
+// swamp both the keyword ranking and the additive semantic score. Kept
+// deliberately small: English only, nothing that could be a domain term.
+const STOPWORDS = new Set([
+  "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "has", "have",
+  "in", "is", "it", "its", "of", "on", "or", "that", "the", "this", "to", "was",
+  "were", "will", "with",
+]);
+
+/**
+ * Query terms shared by the scan and the derived index (they must tokenise
+ * identically — PRISM-35 parity). Lowercased, whitespace-split, single
+ * characters and stopwords dropped. If that leaves nothing (a query made
+ * only of stopwords, e.g. "the who"), fall back to the unfiltered terms so
+ * such a query still searches instead of matching everything.
+ */
+export function queryTerms(query: string): string[] {
+  const all = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length > 1);
+  const kept = all.filter((t) => !STOPWORDS.has(t));
+  return kept.length > 0 ? kept : all;
+}
+
 /**
  * Naive in-memory scan over all concepts — fine into the thousands of files.
  * Scores: title match > description/tag match > body match.
@@ -25,10 +50,7 @@ export async function searchBundle(
   query: string,
   options: SearchOptions = {}
 ): Promise<SearchHit[]> {
-  const terms = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((t) => t.length > 1);
+  const terms = queryTerms(query);
   const scope = normalizeScope(options.scope);
   const paths = await bundle.listConceptPaths();
   const hits: SearchHit[] = [];

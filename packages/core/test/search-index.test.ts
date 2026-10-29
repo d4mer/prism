@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Bundle } from "../src/okf/bundle.js";
 import { KnowledgeBase } from "../src/okf/index.js";
-import { searchBundle, type SearchOptions } from "../src/okf/search.js";
+import { searchBundle, queryTerms, type SearchOptions } from "../src/okf/search.js";
 import {
   rebuildSearchIndex,
   tryIndexedSearch,
@@ -80,6 +80,9 @@ const QUERIES: { query: string; options?: SearchOptions }[] = [
   { query: "", options: { tags: ["prod"] } },
   { query: "postgres", options: { includeHistory: true } },
   { query: "nonexistenttermxyz" },
+  // PRISM-67: stopword handling must be identical in scan and index.
+  { query: "the web server in the app" },
+  { query: "the of in" },
   // PRISM-54: scope parity, including the sibling-prefix case ("/host" must
   // not match "/hosts/...") and a trailing-slash form.
   { query: "web", options: { scope: "/hosts" } },
@@ -345,5 +348,26 @@ describe("PRISM-35: derived SQLite search index", () => {
     const tree = await kb.listTree();
     const names = tree.children?.map((c) => c.name) ?? [];
     expect(names).not.toContain(".prism");
+  });
+});
+
+describe("PRISM-67: query stopwords", () => {
+  it("drops stopwords and single characters from query terms", () => {
+    expect(queryTerms("cutting safety stock in the warehouse")).toEqual([
+      "cutting", "safety", "stock", "warehouse",
+    ]);
+    expect(queryTerms("a b db01")).toEqual(["db01"]);
+  });
+
+  it("falls back to the unfiltered terms when only stopwords remain", () => {
+    expect(queryTerms("the of in")).toEqual(["the", "of", "in"]);
+    expect(queryTerms("")).toEqual([]);
+  });
+
+  it("no longer scores a concept for matching 'in' and 'the' alone", async () => {
+    await kb.writeConcept("/n/a.md", { type: "Note", title: "Alpha" }, "in the garden", "a");
+    await kb.writeConcept("/n/b.md", { type: "Note", title: "Beta" }, "warehouse stock", "b");
+    const hits = await searchBundle(new Bundle(root), "stock in the");
+    expect(hits.map((h) => h.path)).toEqual(["/n/b.md"]);
   });
 });

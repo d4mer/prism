@@ -6,7 +6,7 @@ import { parseDoc } from "./frontmatter.js";
 import { cosineSimilarity } from "ai";
 import type { Bundle } from "./bundle.js";
 import type { Concept, ConceptFrontmatter, SearchHit } from "./types.js";
-import type { SearchOptions } from "./search.js";
+import { queryTerms, type SearchOptions } from "./search.js";
 import { resolveEmbeddingConfig, embedQuery } from "../providers/embeddings.js";
 import { inScope, normalizeScope } from "./scope.js";
 import { aliasesOf, aliasScore } from "./fields.js";
@@ -446,10 +446,7 @@ export function searchIndexed(
   // which is what makes this optional rather than a rewrite.
   queryEmbedding?: number[]
 ): SearchHit[] {
-  const terms = query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((t) => t.length > 1);
+  const terms = queryTerms(query);
 
   const rows = db.prepare(`SELECT * FROM concepts ORDER BY path`).all() as Array<{
     path: string;
